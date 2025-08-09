@@ -41,6 +41,25 @@ function handleTabSelectionWithSettings() {
     }
   }
   
+  // Hide ScrollSnap elements if tabs are hidden
+  if (settings.onlyShowLists || settings.hideForYou || settings.hideFollowing) {
+    setTimeout(() => {
+      hideScrollSnapElements();
+    }, 100);
+    
+    // Also check periodically for any new ScrollSnap elements
+    const scrollSnapInterval = setInterval(() => {
+      if (!isHomePage() || (!settings.onlyShowLists && !settings.hideForYou && !settings.hideFollowing)) {
+        clearInterval(scrollSnapInterval);
+        return;
+      }
+      hideScrollSnapElements();
+    }, 1000);
+    
+    // Store the interval for cleanup
+    window.xScrollSnapInterval = scrollSnapInterval;
+  }
+  
   // Find the first visible tab to select
   let firstVisibleTab = null;
   for (let i = 0; i < tabs.length; i++) {
@@ -266,6 +285,21 @@ function observeDOMChanges() {
                 }
               }
             }
+            
+            // Hide ScrollSnap navigation arrows if they're added
+            const scrollSnapElements = node.querySelectorAll && node.querySelectorAll('.ScrollSnap-prevButtonWrapper, .ScrollSnap-nextButtonWrapper, .ScrollSnap-prevButton, .ScrollSnap-nextButton, [class*="ScrollSnap"][class*="prevButton"], [class*="ScrollSnap"][class*="nextButton"]');
+            if (scrollSnapElements && scrollSnapElements.length > 0 && (settings.onlyShowLists || settings.hideForYou || settings.hideFollowing)) {
+              scrollSnapElements.forEach(element => {
+                element.style.display = 'none';
+              });
+            }
+            
+            // Also call the comprehensive hide function
+            if (settings.onlyShowLists || settings.hideForYou || settings.hideFollowing) {
+              setTimeout(() => {
+                hideScrollSnapElements();
+              }, 50);
+            }
           }
         });
       }
@@ -365,6 +399,50 @@ function injectHideCSS() {
         }
       `;
     }
+    
+    // Hide ScrollSnap navigation arrows when tabs are hidden
+    if (settings.onlyShowLists || settings.hideForYou || settings.hideFollowing) {
+      css += `
+        /* Hide ScrollSnap navigation arrows when tabs are hidden */
+        .TimelineTabs .ScrollSnap-List .ScrollSnap-prevButtonWrapper,
+        .TimelineTabs .ScrollSnap-List .ScrollSnap-nextButtonWrapper,
+        .TimelineTabs .ScrollSnap-List .ScrollSnap-prevButton,
+        .TimelineTabs .ScrollSnap-List .ScrollSnap-nextButton,
+        .TimelineTabs .ScrollSnap-List [class*="prevButton"],
+        .TimelineTabs .ScrollSnap-List [class*="nextButton"] {
+          display: none !important;
+        }
+        
+        /* Also hide any other scroll navigation elements */
+        .TimelineTabs [data-testid="scroll-snap-list"] .ScrollSnap-prevButtonWrapper,
+        .TimelineTabs [data-testid="scroll-snap-list"] .ScrollSnap-nextButtonWrapper,
+        .TimelineTabs [data-testid="scroll-snap-list"] .ScrollSnap-prevButton,
+        .TimelineTabs [data-testid="scroll-snap-list"] .ScrollSnap-nextButton,
+        .TimelineTabs .ScrollSnap-prevButtonWrapper,
+        .TimelineTabs .ScrollSnap-nextButtonWrapper,
+        .TimelineTabs .ScrollSnap-prevButton,
+        .TimelineTabs .ScrollSnap-nextButton {
+          display: none !important;
+        }
+        
+        /* Hide any scroll navigation arrows in the timeline tabs area */
+        .TimelineTabs [class*="ScrollSnap"] [class*="prevButton"],
+        .TimelineTabs [class*="ScrollSnap"] [class*="nextButton"],
+        .TimelineTabs [class*="scroll"] [class*="prev"],
+        .TimelineTabs [class*="scroll"] [class*="next"] {
+          display: none !important;
+        }
+        
+        /* Hide any navigation arrows that might appear */
+        .TimelineTabs [class*="nav"],
+        .TimelineTabs [class*="arrow"],
+        .TimelineTabs [class*="button"][class*="prev"],
+        .TimelineTabs [class*="button"][class*="next"] {
+          display: none !important;
+        }
+      `;
+    }
+    
     style.textContent = css;
     
     document.head.appendChild(style);
@@ -397,6 +475,47 @@ function injectImmediateCSS() {
       css += `
         /* Hide second tab when hide following is enabled */
         .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(2) {
+          display: none !important;
+        }
+      `;
+    }
+    
+    // Hide ScrollSnap navigation arrows when tabs are hidden
+    if (settings.onlyShowLists || settings.hideForYou || settings.hideFollowing) {
+      css += `
+        /* Hide ScrollSnap navigation arrows when tabs are hidden */
+        .TimelineTabs .ScrollSnap-List .ScrollSnap-prevButtonWrapper,
+        .TimelineTabs .ScrollSnap-List .ScrollSnap-nextButtonWrapper,
+        .TimelineTabs .ScrollSnap-List .ScrollSnap-prevButton,
+        .TimelineTabs .ScrollSnap-List .ScrollSnap-nextButton {
+          display: none !important;
+        }
+        
+        /* Also hide any other scroll navigation elements */
+        .TimelineTabs [data-testid="scroll-snap-list"] .ScrollSnap-prevButtonWrapper,
+        .TimelineTabs [data-testid="scroll-snap-list"] .ScrollSnap-nextButtonWrapper,
+        .TimelineTabs [data-testid="scroll-snap-list"] .ScrollSnap-prevButton,
+        .TimelineTabs [data-testid="scroll-snap-list"] .ScrollSnap-nextButton,
+        .TimelineTabs .ScrollSnap-prevButtonWrapper,
+        .TimelineTabs .ScrollSnap-nextButtonWrapper,
+        .TimelineTabs .ScrollSnap-prevButton,
+        .TimelineTabs .ScrollSnap-nextButton {
+          display: none !important;
+        }
+        
+        /* Hide any scroll navigation arrows in the timeline tabs area */
+        .TimelineTabs [class*="ScrollSnap"] [class*="prevButton"],
+        .TimelineTabs [class*="ScrollSnap"] [class*="nextButton"],
+        .TimelineTabs [class*="scroll"] [class*="prev"],
+        .TimelineTabs [class*="scroll"] [class*="next"] {
+          display: none !important;
+        }
+        
+        /* Hide any navigation arrows that might appear */
+        .TimelineTabs [class*="nav"],
+        .TimelineTabs [class*="arrow"],
+        .TimelineTabs [class*="button"][class*="prev"],
+        .TimelineTabs [class*="button"][class*="next"] {
           display: none !important;
         }
       `;
@@ -450,6 +569,104 @@ function updateSettings(newSettings) {
   handleTabSelection();
 }
 
+// Function to actively hide ScrollSnap navigation elements
+function hideScrollSnapElements() {
+  if (!isHomePage() || (!settings.onlyShowLists && !settings.hideForYou && !settings.hideFollowing)) {
+    return;
+  }
+  
+  console.log('Hiding ScrollSnap navigation elements');
+  
+  // Find the TimelineTabs area first
+  const timelineTabs = document.querySelector('.TimelineTabs') || document.querySelector('[data-testid="primaryColumn"]');
+  if (!timelineTabs) {
+    return;
+  }
+  
+  // Find all possible ScrollSnap navigation elements within the TimelineTabs area
+  const selectors = [
+    '.ScrollSnap-prevButtonWrapper',
+    '.ScrollSnap-nextButtonWrapper',
+    '.ScrollSnap-prevButton',
+    '.ScrollSnap-nextButton',
+    '[class*="ScrollSnap"][class*="prevButton"]',
+    '[class*="ScrollSnap"][class*="nextButton"]',
+    '[class*="scroll"][class*="prev"]',
+    '[class*="scroll"][class*="next"]',
+    '[class*="nav"][class*="prev"]',
+    '[class*="nav"][class*="next"]',
+    '[class*="arrow"][class*="prev"]',
+    '[class*="arrow"][class*="next"]',
+    '[class*="button"][class*="prev"]',
+    '[class*="button"][class*="next"]',
+    // More specific selectors for Twitter's ScrollSnap
+    '[data-testid="scroll-snap-list"] [class*="prev"]',
+    '[data-testid="scroll-snap-list"] [class*="next"]',
+    '[data-testid="scroll-snap-list"] [class*="button"]',
+    // General navigation arrows
+    '[role="button"][aria-label*="previous"]',
+    '[role="button"][aria-label*="next"]',
+    '[role="button"][aria-label*="scroll"]'
+  ];
+  
+  selectors.forEach(selector => {
+    const elements = timelineTabs.querySelectorAll(selector);
+    elements.forEach(element => {
+      element.style.display = 'none';
+      element.style.visibility = 'hidden';
+      element.style.opacity = '0';
+      console.log('Hidden ScrollSnap element:', selector, element);
+    });
+  });
+  
+  // Also look for any elements with scroll-related classes within the TimelineTabs area
+  const scrollElements = timelineTabs.querySelectorAll('[class*="ScrollSnap"], [class*="scroll"]');
+  scrollElements.forEach(element => {
+    const className = element.className || '';
+    if (typeof className === 'string' && (className.includes('prev') || className.includes('next') || className.includes('button'))) {
+      const computedStyle = window.getComputedStyle(element);
+      const isVisible = computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
+      
+      if (isVisible) {
+        element.style.display = 'none';
+        element.style.visibility = 'hidden';
+        element.style.opacity = '0';
+        console.log('Hidden potential ScrollSnap element:', className, element);
+      }
+    }
+  });
+  
+  // Also check for any elements that might be navigation arrows based on their attributes
+  const potentialNavElements = timelineTabs.querySelectorAll('[role="button"], [class*="button"], [class*="nav"], [class*="arrow"]');
+  potentialNavElements.forEach(element => {
+    const ariaLabel = element.getAttribute('aria-label') || '';
+    const className = element.className || '';
+    const textContent = element.textContent || '';
+    
+    // Check if this element looks like a navigation arrow
+    if (ariaLabel.toLowerCase().includes('previous') || 
+        ariaLabel.toLowerCase().includes('next') || 
+        ariaLabel.toLowerCase().includes('scroll') ||
+        className.toLowerCase().includes('prev') ||
+        className.toLowerCase().includes('next') ||
+        textContent.includes('‹') ||
+        textContent.includes('›') ||
+        textContent.includes('←') ||
+        textContent.includes('→')) {
+      
+      const computedStyle = window.getComputedStyle(element);
+      const isVisible = computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
+      
+      if (isVisible) {
+        element.style.display = 'none';
+        element.style.visibility = 'hidden';
+        element.style.opacity = '0';
+        console.log('Hidden navigation element:', ariaLabel, className, textContent, element);
+      }
+    }
+  });
+}
+
 // Function to clean up CSS when leaving home page
 function cleanupCSS() {
   const style = document.getElementById('x-tab-selector-css');
@@ -460,6 +677,12 @@ function cleanupCSS() {
   const immediateStyle = document.getElementById('x-immediate-css');
   if (immediateStyle) {
     immediateStyle.remove();
+  }
+  
+  // Clear ScrollSnap interval
+  if (window.xScrollSnapInterval) {
+    clearInterval(window.xScrollSnapInterval);
+    window.xScrollSnapInterval = null;
   }
 }
 
