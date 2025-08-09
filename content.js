@@ -262,18 +262,8 @@ function handleTabClicks() {
           }
         }
         
-        // Handle "Make your list the default timeline" setting
-        if (settings.makeListDefault && (tabIndex === 0 || tabIndex === 1) && tabs.length >= 3) {
-          console.log('User clicked on first or second tab, but makeListDefault is enabled, redirecting to 3rd tab');
-          event.preventDefault();
-          event.stopPropagation();
-          
-          const thirdTab = tabs[2];
-          if (thirdTab) {
-            selectTab(thirdTab);
-          }
-          return;
-        }
+        // Note: makeListDefault only affects initial tab selection, not user clicks
+        // Users should be able to freely click on any tab after the initial selection
       }
       
       // User clicked on a valid tab, allow it
@@ -294,8 +284,8 @@ function handleTabClicks() {
           
           // If this is the first tab (index 0) or second tab (index 1) and we want to select it
           if ((tabIndex === 0 || tabIndex === 1) && tabs.length >= 3) {
-            // Check if we should redirect based on settings
-            if (settings.onlyShowLists || settings.makeListDefault) {
+            // Only redirect if onlyShowLists is enabled (not for makeListDefault)
+            if (settings.onlyShowLists) {
               console.log('Preventing tab', tabIndex + 1, 'selection, redirecting to 3rd tab');
               // Instead of selecting the first or second tab, select the 3rd tab
               const thirdTab = tabs[2];
