@@ -136,11 +136,25 @@ function handleTabSelectionWithSettings() {
   
   // Find the first visible tab to select
   let firstVisibleTab = null;
-  for (let i = 0; i < tabs.length; i++) {
-    const parentDiv = tabs[i].closest('[role="presentation"]');
-    if (parentDiv && parentDiv.style.display !== 'none') {
-      firstVisibleTab = tabs[i];
-      break;
+  
+  // If makeListDefault is enabled, try to select the 3rd tab (lists tab)
+  if (settings.makeListDefault && tabs.length >= 3) {
+    const thirdTab = tabs[2];
+    const thirdTabParent = thirdTab.closest('[role="presentation"]');
+    if (thirdTabParent && thirdTabParent.style.display !== 'none') {
+      firstVisibleTab = thirdTab;
+      console.log('makeListDefault enabled: selecting 3rd tab (lists tab)');
+    }
+  }
+  
+  // If makeListDefault didn't select a tab or is disabled, use the original logic
+  if (!firstVisibleTab) {
+    for (let i = 0; i < tabs.length; i++) {
+      const parentDiv = tabs[i].closest('[role="presentation"]');
+      if (parentDiv && parentDiv.style.display !== 'none') {
+        firstVisibleTab = tabs[i];
+        break;
+      }
     }
   }
   
@@ -247,6 +261,19 @@ function handleTabClicks() {
             return;
           }
         }
+        
+        // Handle "Make your list the default timeline" setting
+        if (settings.makeListDefault && (tabIndex === 0 || tabIndex === 1) && tabs.length >= 3) {
+          console.log('User clicked on first or second tab, but makeListDefault is enabled, redirecting to 3rd tab');
+          event.preventDefault();
+          event.stopPropagation();
+          
+          const thirdTab = tabs[2];
+          if (thirdTab) {
+            selectTab(thirdTab);
+          }
+          return;
+        }
       }
       
       // User clicked on a valid tab, allow it
@@ -267,12 +294,15 @@ function handleTabClicks() {
           
           // If this is the first tab (index 0) or second tab (index 1) and we want to select it
           if ((tabIndex === 0 || tabIndex === 1) && tabs.length >= 3) {
-            console.log('Preventing tab', tabIndex + 1, 'selection, redirecting to 3rd tab');
-            // Instead of selecting the first or second tab, select the 3rd tab
-            const thirdTab = tabs[2];
-            if (thirdTab) {
-              // Call the original setAttribute on the 3rd tab instead
-              return originalSetAttribute.call(thirdTab, name, value);
+            // Check if we should redirect based on settings
+            if (settings.onlyShowLists || settings.makeListDefault) {
+              console.log('Preventing tab', tabIndex + 1, 'selection, redirecting to 3rd tab');
+              // Instead of selecting the first or second tab, select the 3rd tab
+              const thirdTab = tabs[2];
+              if (thirdTab) {
+                // Call the original setAttribute on the 3rd tab instead
+                return originalSetAttribute.call(thirdTab, name, value);
+              }
             }
           }
         }
@@ -411,7 +441,8 @@ function observeDOMChanges() {
 let settings = {
   onlyShowLists: false,
   hideForYou: false,
-  hideFollowing: false
+  hideFollowing: false,
+  makeListDefault: false
 };
 
 // Initialize the extension
@@ -610,7 +641,8 @@ function loadSettings() {
   chrome.storage.sync.get({
     onlyShowLists: false,
     hideForYou: false,
-    hideFollowing: false
+    hideFollowing: false,
+    makeListDefault: false
   }, function(items) {
     settings = items;
     console.log('Settings loaded:', settings);

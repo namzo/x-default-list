@@ -6,16 +6,19 @@ document.addEventListener('DOMContentLoaded', function() {
     const hideFollowingToggle = document.getElementById('hideFollowingToggle');
     const hideForYouOption = document.getElementById('hideForYouOption');
     const hideFollowingOption = document.getElementById('hideFollowingOption');
+    const makeListDefaultToggle = document.getElementById('makeListDefaultToggle');
 
     // Load saved settings
     chrome.storage.sync.get({
         onlyShowLists: false,
         hideForYou: false,
-        hideFollowing: false
+        hideFollowing: false,
+        makeListDefault: false
     }, function(items) {
         updateToggleState(onlyShowListsToggle, items.onlyShowLists);
         updateToggleState(hideForYouToggle, items.hideForYou);
         updateToggleState(hideFollowingToggle, items.hideFollowing);
+        updateToggleState(makeListDefaultToggle, items.makeListDefault);
         
         // Check for derived state after loading
         checkDerivedState();
@@ -110,7 +113,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const settings = {
             onlyShowLists: onlyShowLists,
             hideForYou: getToggleState(hideForYouToggle),
-            hideFollowing: getToggleState(hideFollowingToggle)
+            hideFollowing: getToggleState(hideFollowingToggle),
+            makeListDefault: getToggleState(makeListDefaultToggle)
         };
 
         // Save settings
@@ -197,6 +201,13 @@ document.addEventListener('DOMContentLoaded', function() {
         // Check individual derived states
         checkIndividualDerivedStates();
         
+        saveAndApplySettings();
+    });
+
+    // Handle "Make your list the default timeline" toggle change
+    makeListDefaultToggle.addEventListener('click', function() {
+        const isActive = getToggleState(this);
+        updateToggleState(this, !isActive);
         saveAndApplySettings();
     });
 });
