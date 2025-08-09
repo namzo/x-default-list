@@ -21,99 +21,49 @@ function handleTabSelectionWithSettings() {
     return true; // Return true to stop retrying since there's no 3rd tab
   }
   
-  // IMMEDIATELY hide tabs based on settings to prevent flash
-  if (settings.onlyShowLists) {
-    // Hide first and second tab parent divs immediately
-    if (tabs[0]) {
-      const parentDiv = tabs[0].closest('[role="presentation"]');
-      if (parentDiv) {
-        parentDiv.style.display = 'none';
-      }
+  // Show all tab parent divs first
+  tabs.forEach(tab => {
+    const parentDiv = tab.closest('[role="presentation"]');
+    if (parentDiv) parentDiv.style.display = '';
+  });
+  
+  // Handle individual hide settings
+  if (settings.hideForYou && tabs[0]) {
+    const parentDiv = tabs[0].closest('[role="presentation"]');
+    if (parentDiv) {
+      parentDiv.style.display = 'none';
     }
-    if (tabs[1]) {
-      const parentDiv = tabs[1].closest('[role="presentation"]');
-      if (parentDiv) {
-        parentDiv.style.display = 'none';
-      }
-    }
-  } else {
-    // Handle individual hide settings immediately
-    if (settings.hideForYou && tabs[0]) {
-      const parentDiv = tabs[0].closest('[role="presentation"]');
-      if (parentDiv) {
-        parentDiv.style.display = 'none';
-      }
-    }
-    if (settings.hideFollowing && tabs[1]) {
-      const parentDiv = tabs[1].closest('[role="presentation"]');
-      if (parentDiv) {
-        parentDiv.style.display = 'none';
-      }
+  }
+  if (settings.hideFollowing && tabs[1]) {
+    const parentDiv = tabs[1].closest('[role="presentation"]');
+    if (parentDiv) {
+      parentDiv.style.display = 'none';
     }
   }
   
-  // Handle "Only show lists" setting
-  if (settings.onlyShowLists) {
-    // Hide first and second tab parent divs
-    if (tabs[0]) {
-      const parentDiv = tabs[0].closest('[role="presentation"]');
-      if (parentDiv) parentDiv.style.display = 'none';
+  // Find the first visible tab to select
+  let firstVisibleTab = null;
+  for (let i = 0; i < tabs.length; i++) {
+    const parentDiv = tabs[i].closest('[role="presentation"]');
+    if (parentDiv && parentDiv.style.display !== 'none') {
+      firstVisibleTab = tabs[i];
+      break;
     }
-    if (tabs[1]) {
-      const parentDiv = tabs[1].closest('[role="presentation"]');
-      if (parentDiv) parentDiv.style.display = 'none';
-    }
-    
-    // Select the 3rd tab (now effectively the first visible tab)
-    const thirdTab = tabs[2];
-    if (thirdTab) {
-      thirdTab.setAttribute('aria-selected', 'true');
-      thirdTab.classList.add('r-1kihuf0');
-      thirdTab.click();
-      console.log('Only lists mode: 3rd tab selected');
-      return true;
-    }
-  } else {
-    // Show all tab parent divs first
+  }
+  
+  if (firstVisibleTab) {
+    // Set all tabs to unselected
     tabs.forEach(tab => {
-      const parentDiv = tab.closest('[role="presentation"]');
-      if (parentDiv) parentDiv.style.display = '';
+      tab.setAttribute('aria-selected', 'false');
+      tab.classList.remove('active', 'selected', 'r-1kihuf0');
     });
     
-    // Handle individual hide settings
-    if (settings.hideForYou && tabs[0]) {
-      const parentDiv = tabs[0].closest('[role="presentation"]');
-      if (parentDiv) parentDiv.style.display = 'none';
-    }
-    if (settings.hideFollowing && tabs[1]) {
-      const parentDiv = tabs[1].closest('[role="presentation"]');
-      if (parentDiv) parentDiv.style.display = 'none';
-    }
-    
-    // Find the first visible tab to select
-    let firstVisibleTab = null;
-    for (let i = 0; i < tabs.length; i++) {
-      const parentDiv = tabs[i].closest('[role="presentation"]');
-      if (parentDiv && parentDiv.style.display !== 'none') {
-        firstVisibleTab = tabs[i];
-        break;
-      }
-    }
-    
-    if (firstVisibleTab) {
-      // Set all tabs to unselected
-      tabs.forEach(tab => {
-        tab.setAttribute('aria-selected', 'false');
-        tab.classList.remove('active', 'selected', 'r-1kihuf0');
-      });
-      
-      // Select the first visible tab
-      firstVisibleTab.setAttribute('aria-selected', 'true');
-      firstVisibleTab.classList.add('r-1kihuf0');
-      firstVisibleTab.click();
-      console.log('Selected first visible tab:', firstVisibleTab.textContent.trim());
-      return true;
-    }
+    // Select the first visible tab
+    firstVisibleTab.setAttribute('aria-selected', 'true');
+    firstVisibleTab.classList.add('r-1kihuf0');
+    firstVisibleTab.click();
+    console.log('Selected first visible tab:', firstVisibleTab.textContent.trim());
+    return true;
   }
   
   return false;
@@ -398,34 +348,24 @@ function injectHideCSS() {
     const style = document.createElement('style');
     style.id = 'x-tab-selector-css';
     
-    if (settings.onlyShowLists) {
-      style.textContent = `
-        /* Hide first and second tabs when only show lists is enabled */
-        .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(1),
+    let css = '';
+    if (settings.hideForYou) {
+      css += `
+        /* Hide first tab when hide for you is enabled */
+        .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(1) {
+          display: none !important;
+        }
+      `;
+    }
+    if (settings.hideFollowing) {
+      css += `
+        /* Hide second tab when hide following is enabled */
         .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(2) {
           display: none !important;
         }
       `;
-    } else {
-      let css = '';
-      if (settings.hideForYou) {
-        css += `
-          /* Hide first tab when hide for you is enabled */
-          .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(1) {
-            display: none !important;
-          }
-        `;
-      }
-      if (settings.hideFollowing) {
-        css += `
-          /* Hide second tab when hide following is enabled */
-          .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(2) {
-            display: none !important;
-          }
-        `;
-      }
-      style.textContent = css;
     }
+    style.textContent = css;
     
     document.head.appendChild(style);
   }
@@ -445,75 +385,25 @@ function injectImmediateCSS() {
   if (settings.onlyShowLists || settings.hideForYou || settings.hideFollowing) {
     let css = '';
     
-    if (settings.onlyShowLists) {
+    if (settings.hideForYou) {
       css += `
-        /* Hide first and second tabs when only show lists is enabled */
-        .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(1),
+        /* Hide first tab when hide for you is enabled */
+        .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(1) {
+          display: none !important;
+        }
+      `;
+    }
+    if (settings.hideFollowing) {
+      css += `
+        /* Hide second tab when hide following is enabled */
         .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(2) {
           display: none !important;
         }
       `;
-    } else {
-      if (settings.hideForYou) {
-        css += `
-          /* Hide first tab when hide for you is enabled */
-          .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(1) {
-            display: none !important;
-          }
-        `;
-      }
-      if (settings.hideFollowing) {
-        css += `
-          /* Hide second tab when hide following is enabled */
-          .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(2) {
-            display: none !important;
-          }
-        `;
-      }
     }
     
     immediateStyle.textContent = css;
     document.head.appendChild(immediateStyle);
-  }
-}
-
-// Function to update CSS based on settings
-function updateHideCSS() {
-  // Only update CSS on home page
-  if (!isHomePage()) {
-    return;
-  }
-  
-  let style = document.getElementById('x-tab-selector-css');
-  if (!style) {
-    style = document.createElement('style');
-    style.id = 'x-tab-selector-css';
-    document.head.appendChild(style);
-  }
-  
-  if (settings.onlyShowLists) {
-    style.textContent = `
-      /* Hide first and second tabs */
-      .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(1) { 
-        display: none !important; 
-      }
-      .TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(2) { 
-        display: none !important; 
-      }
-    `;
-  } else {
-    let css = '';
-    if (settings.hideForYou) {
-      css += `.TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(1) { 
-        display: none !important; 
-      }`;
-    }
-    if (settings.hideFollowing) {
-      css += `.TimelineTabs [role="tablist"] > [role="presentation"]:nth-child(2) { 
-        display: none !important; 
-      }`;
-    }
-    style.textContent = css;
   }
 }
 
