@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "X.com Third Tab Selector",
+  "version": "1.0",
+  "description": "Automatically selects the 3rd tab in the tablist on x.com/twitter.com",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.x.com/*",
+        "*://*.twitter.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "X.com Tab Selector"
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

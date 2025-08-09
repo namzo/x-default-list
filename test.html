@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>X.com Tab Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .tablist {
+            display: flex;
+            border-bottom: 1px solid #ccc;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: #666;
+        }
+        .tab[aria-selected="true"] {
+            color: #000;
+            border-bottom: 2px solid #1da1f2;
+        }
+        .tab:hover {
+            background-color: #f0f0f0;
+        }
+        .content {
+            padding: 20px;
+            border: 1px solid #ccc;
+            min-height: 200px;
+        }
+    </style>
+</head>
+<body>
+    <h1>X.com Tab Test</h1>
+    <p>This simulates the Twitter/X tab structure for testing the extension.</p>
+    
+    <div role="tablist" class="tablist">
+        <button role="tab" aria-selected="false" class="tab">For you</button>
+        <button role="tab" aria-selected="true" class="tab">Following</button>
+        <button role="tab" aria-selected="false" class="tab">My TL</button>
+    </div>
+    
+    <div class="content">
+        <p>This is the content area. The extension should automatically select the 3rd tab ("My TL") when the page loads.</p>
+        <p>You can click on different tabs to test user interaction handling.</p>
+    </div>
+    
+    <script>
+        // Simple tab switching functionality for testing
+        document.querySelectorAll('[role="tab"]').forEach(tab => {
+            tab.addEventListener('click', function() {
+                // Remove selected state from all tabs
+                document.querySelectorAll('[role="tab"]').forEach(t => {
+                    t.setAttribute('aria-selected', 'false');
+                });
+                // Set selected state on clicked tab
+                this.setAttribute('aria-selected', 'true');
+            });
+        });
+    </script>
+</body>
+</html>
