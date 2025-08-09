@@ -1,3 +1,77 @@
+// Helper function to select a tab without causing scrolling
+function selectTab(tab) {
+  if (!tab) return;
+  
+  // Get all tabs in the same tablist
+  const tablist = tab.closest('[role="tablist"]');
+  if (!tablist) return;
+  
+  const tabs = tablist.querySelectorAll('[role="tab"]');
+  
+  // Set all tabs to unselected
+  tabs.forEach(t => {
+    t.setAttribute('aria-selected', 'false');
+    t.classList.remove('active', 'selected', 'r-1kihuf0');
+  });
+  
+  // Select the target tab
+  tab.setAttribute('aria-selected', 'true');
+  tab.classList.add('r-1kihuf0');
+  
+  // Store current scroll position
+  const scrollY = window.scrollY;
+  
+  // Try to trigger the tab selection using multiple approaches
+  try {
+    // Approach 1: Try to use the tab's native click method with scroll prevention
+    if (typeof tab.click === 'function') {
+      // Temporarily override scrollTo to prevent scrolling
+      const originalScrollTo = window.scrollTo;
+      const originalScrollBy = window.scrollBy;
+      
+      window.scrollTo = function() {
+        // Do nothing - prevent scrolling
+      };
+      window.scrollBy = function() {
+        // Do nothing - prevent scrolling
+      };
+      
+      // Trigger the click
+      tab.click();
+      
+      // Restore the original scroll methods
+      window.scrollTo = originalScrollTo;
+      window.scrollBy = originalScrollBy;
+    } else {
+      // Approach 2: Create and dispatch a click event
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        detail: 1
+      });
+      tab.dispatchEvent(clickEvent);
+    }
+    
+    // Approach 3: Also try to trigger focus for good measure
+    const focusEvent = new FocusEvent('focus', {
+      bubbles: true,
+      cancelable: true
+    });
+    tab.dispatchEvent(focusEvent);
+    
+  } catch (error) {
+    console.log('Error triggering tab selection:', error);
+  }
+  
+  // Restore scroll position if it changed significantly
+  if (Math.abs(window.scrollY - scrollY) > 10) {
+    window.scrollTo(0, scrollY);
+  }
+  
+  console.log('Selected tab:', tab.textContent.trim());
+}
+
 // Function to handle tab selection based on settings
 function handleTabSelectionWithSettings() {
   // Only run on home page
@@ -71,17 +145,8 @@ function handleTabSelectionWithSettings() {
   }
   
   if (firstVisibleTab) {
-    // Set all tabs to unselected
-    tabs.forEach(tab => {
-      tab.setAttribute('aria-selected', 'false');
-      tab.classList.remove('active', 'selected', 'r-1kihuf0');
-    });
-    
-    // Select the first visible tab
-    firstVisibleTab.setAttribute('aria-selected', 'true');
-    firstVisibleTab.classList.add('r-1kihuf0');
-    firstVisibleTab.click();
-    console.log('Selected first visible tab:', firstVisibleTab.textContent.trim());
+    // Use the helper function to select the tab
+    selectTab(firstVisibleTab);
     return true;
   }
   
@@ -91,7 +156,7 @@ function handleTabSelectionWithSettings() {
 // Function to handle tab selection with retry mechanism
 function handleTabSelection() {
   let attempts = 0;
-  const maxAttempts = 20; // Increased attempts for more aggressive retrying
+  const maxAttempts = 10; // Reduced attempts to avoid excessive retrying
   
   const trySelectTab = () => {
     attempts++;
@@ -102,8 +167,8 @@ function handleTabSelection() {
     }
     
     if (attempts < maxAttempts) {
-      // Retry with shorter delays for faster response
-      setTimeout(trySelectTab, attempts < 5 ? 25 : 50);
+      // Retry with longer delays to avoid excessive retrying
+      setTimeout(trySelectTab, attempts < 3 ? 100 : 200);
     } else {
       console.log('Failed to find tablist after', maxAttempts, 'attempts');
     }
@@ -144,7 +209,7 @@ function handleTabClicks() {
             
             const thirdTab = tabs[2];
             if (thirdTab) {
-              thirdTab.click();
+              selectTab(thirdTab);
             }
             return;
           }
@@ -155,14 +220,14 @@ function handleTabClicks() {
             event.preventDefault();
             event.stopPropagation();
             
-                      // Find next visible tab
-          for (let i = 1; i < tabs.length; i++) {
-            const parentDiv = tabs[i].closest('[role="presentation"]');
-            if (parentDiv && parentDiv.style.display !== 'none') {
-              tabs[i].click();
-              return;
+            // Find next visible tab
+            for (let i = 1; i < tabs.length; i++) {
+              const parentDiv = tabs[i].closest('[role="presentation"]');
+              if (parentDiv && parentDiv.style.display !== 'none') {
+                selectTab(tabs[i]);
+                return;
+              }
             }
-          }
             return;
           }
           
@@ -175,7 +240,7 @@ function handleTabClicks() {
             for (let i = 2; i < tabs.length; i++) {
               const parentDiv = tabs[i].closest('[role="presentation"]');
               if (parentDiv && parentDiv.style.display !== 'none') {
-                tabs[i].click();
+                selectTab(tabs[i]);
                 return;
               }
             }
@@ -221,6 +286,9 @@ function handleTabClicks() {
 
 // Function to observe DOM changes and handle dynamic content
 function observeDOMChanges() {
+  let reinitializeTimeout = null;
+  let checkTabsTimeout = null;
+  
   const observer = new MutationObserver((mutations) => {
     // Only observe on home page
     if (!isHomePage()) {
@@ -308,16 +376,27 @@ function observeDOMChanges() {
     if (shouldReinitialize) {
       // Re-initialize when tablist is found (likely navigation to home)
       console.log('Tablist found, re-initializing extension');
-      setTimeout(() => {
+      
+      // Clear any existing timeout
+      if (reinitializeTimeout) {
+        clearTimeout(reinitializeTimeout);
+      }
+      
+      reinitializeTimeout = setTimeout(() => {
         init();
-      }, 100);
+      }, 200);
     }
     
     if (shouldCheckTabs) {
+      // Clear any existing timeout
+      if (checkTabsTimeout) {
+        clearTimeout(checkTabsTimeout);
+      }
+      
       // Immediate check for faster response
       handleTabSelection();
       // Also check again after a short delay to ensure everything is loaded
-      setTimeout(handleTabSelection, 50);
+      checkTabsTimeout = setTimeout(handleTabSelection, 100);
     }
   });
   
@@ -695,6 +774,7 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 
 // Listen for URL changes and handle navigation
 let currentUrl = window.location.href;
+let urlChangeTimeout = null;
 
 // Function to handle URL changes
 function handleUrlChange() {
@@ -703,12 +783,17 @@ function handleUrlChange() {
     currentUrl = newUrl;
     console.log('URL changed to:', newUrl);
     
+    // Clear any existing timeout
+    if (urlChangeTimeout) {
+      clearTimeout(urlChangeTimeout);
+    }
+    
     if (isHomePage()) {
       console.log('Navigated to home page, initializing extension');
-      // Small delay to ensure DOM is ready
-      setTimeout(() => {
+      // Small delay to ensure DOM is ready, but don't reinitialize too frequently
+      urlChangeTimeout = setTimeout(() => {
         init();
-      }, 100);
+      }, 200);
     } else {
       console.log('Left home page, cleaning up CSS');
       cleanupCSS();
@@ -716,8 +801,8 @@ function handleUrlChange() {
   }
 }
 
-// Monitor URL changes
-setInterval(handleUrlChange, 1000);
+// Monitor URL changes less frequently to avoid performance issues
+setInterval(handleUrlChange, 2000);
 
 // Also listen for browser navigation events
 window.addEventListener('popstate', handleUrlChange);
