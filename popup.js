@@ -132,11 +132,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const isActive = getToggleState(this);
         const isDerived = this.classList.contains('derived');
         
-        // If it's in derived state, treat it as turning on manually
+        // If it's in derived state, turn it OFF and turn off the individual toggles
         if (isDerived) {
-            updateToggleStateWithDerived(this, true, false);
-            updateToggleState(hideForYouToggle, true);
-            updateToggleState(hideFollowingToggle, true);
+            updateToggleStateWithDerived(this, false, false);
+            updateToggleState(hideForYouToggle, false);
+            updateToggleState(hideFollowingToggle, false);
         } else {
             updateToggleState(this, !isActive);
             
