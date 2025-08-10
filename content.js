@@ -121,17 +121,9 @@ function handleTabSelectionWithSettings() {
       hideScrollSnapElements();
     }, 100);
     
-    // Also check periodically for any new ScrollSnap elements
-    const scrollSnapInterval = setInterval(() => {
-      if (!isHomePage() || (!settings.onlyShowLists && !settings.hideForYou && !settings.hideFollowing)) {
-        clearInterval(scrollSnapInterval);
-        return;
-      }
-      hideScrollSnapElements();
-    }, 1000);
-    
-    // Store the interval for cleanup
-    window.xScrollSnapInterval = scrollSnapInterval;
+    // Removed the aggressive interval that was causing scrolling issues
+    // The hideScrollSnapElements function will be called once after tab selection
+    // and any additional hiding will be handled by the CSS injection
   }
   
   // Find the first visible tab to select
@@ -170,7 +162,7 @@ function handleTabSelectionWithSettings() {
 // Function to handle tab selection with retry mechanism
 function handleTabSelection() {
   let attempts = 0;
-  const maxAttempts = 10; // Reduced attempts to avoid excessive retrying
+  const maxAttempts = 5; // Reduced attempts to be less aggressive
   
   const trySelectTab = () => {
     attempts++;
@@ -181,8 +173,8 @@ function handleTabSelection() {
     }
     
     if (attempts < maxAttempts) {
-      // Retry with longer delays to avoid excessive retrying
-      setTimeout(trySelectTab, attempts < 3 ? 100 : 200);
+      // Retry with much longer delays to avoid interference
+      setTimeout(trySelectTab, attempts < 2 ? 200 : 500);
     } else {
       console.log('Failed to find tablist after', maxAttempts, 'attempts');
     }
@@ -308,6 +300,7 @@ function handleTabClicks() {
 function observeDOMChanges() {
   let reinitializeTimeout = null;
   let checkTabsTimeout = null;
+  let hasInitialized = false;
   
   const observer = new MutationObserver((mutations) => {
     // Only observe on home page
@@ -320,82 +313,66 @@ function observeDOMChanges() {
     
     mutations.forEach((mutation) => {
       if (mutation.type === 'childList') {
-        // Check if tablist was added or modified
+        // Check if tablist was added or modified (only for major changes)
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            if (node.querySelector && node.querySelector('[role="tablist"]')) {
+            // Only reinitialize if we find a completely new tablist (likely navigation)
+            if (node.querySelector && node.querySelector('[role="tablist"]') && !hasInitialized) {
               shouldCheckTabs = true;
               shouldReinitialize = true;
+              hasInitialized = true;
             }
           }
         });
         
-        // Also check if any tab elements were added
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            if (node.querySelector && node.querySelector('[role="tab"]')) {
-              shouldCheckTabs = true;
-            }
-          }
-        });
-        
-        // IMMEDIATELY hide any tabs that should be hidden
+        // IMMEDIATELY hide any tabs that should be hidden (but only for new tab elements)
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const tabs = node.querySelectorAll && node.querySelectorAll('[role="tab"]');
             if (tabs && tabs.length > 0) {
-              // Immediately hide tabs based on settings
-              if (settings.onlyShowLists) {
-                if (tabs[0]) {
-                  const parentDiv = tabs[0].closest('[role="presentation"]');
-                  if (parentDiv) {
-                    parentDiv.style.display = 'none';
+              // Only hide tabs if they're actually new and visible
+              tabs.forEach(tab => {
+                const parentDiv = tab.closest('[role="presentation"]');
+                if (parentDiv && parentDiv.style.display !== 'none') {
+                  // Immediately hide tabs based on settings
+                  if (settings.onlyShowLists) {
+                    const tabIndex = Array.from(tab.parentElement.querySelectorAll('[role="tab"]')).indexOf(tab);
+                    if (tabIndex === 0 || tabIndex === 1) {
+                      parentDiv.style.display = 'none';
+                    }
+                  } else {
+                    if (settings.hideForYou) {
+                      const tabIndex = Array.from(tab.parentElement.querySelectorAll('[role="tab"]')).indexOf(tab);
+                      if (tabIndex === 0) {
+                        parentDiv.style.display = 'none';
+                      }
+                    }
+                    if (settings.hideFollowing) {
+                      const tabIndex = Array.from(tab.parentElement.querySelectorAll('[role="tab"]')).indexOf(tab);
+                      if (tabIndex === 1) {
+                        parentDiv.style.display = 'none';
+                      }
+                    }
                   }
                 }
-                if (tabs[1]) {
-                  const parentDiv = tabs[1].closest('[role="presentation"]');
-                  if (parentDiv) {
-                    parentDiv.style.display = 'none';
-                  }
-                }
-              } else {
-                if (settings.hideForYou && tabs[0]) {
-                  const parentDiv = tabs[0].closest('[role="presentation"]');
-                  if (parentDiv) {
-                    parentDiv.style.display = 'none';
-                  }
-                }
-                if (settings.hideFollowing && tabs[1]) {
-                  const parentDiv = tabs[1].closest('[role="presentation"]');
-                  if (parentDiv) {
-                    parentDiv.style.display = 'none';
-                  }
-                }
-              }
+              });
             }
             
-            // Hide ScrollSnap navigation arrows if they're added
+            // Hide ScrollSnap navigation arrows if they're added (but only once)
             const scrollSnapElements = node.querySelectorAll && node.querySelectorAll('.ScrollSnap-prevButtonWrapper, .ScrollSnap-nextButtonWrapper, .ScrollSnap-prevButton, .ScrollSnap-nextButton, [class*="ScrollSnap"][class*="prevButton"], [class*="ScrollSnap"][class*="nextButton"]');
             if (scrollSnapElements && scrollSnapElements.length > 0 && (settings.onlyShowLists || settings.hideForYou || settings.hideFollowing)) {
               scrollSnapElements.forEach(element => {
                 element.style.display = 'none';
               });
             }
-            
-            // Also call the comprehensive hide function
-            if (settings.onlyShowLists || settings.hideForYou || settings.hideFollowing) {
-              setTimeout(() => {
-                hideScrollSnapElements();
-              }, 50);
-            }
           }
         });
       }
     });
     
-    if (shouldReinitialize) {
-      // Re-initialize when tablist is found (likely navigation to home)
-      console.log('Tablist found, re-initializing extension');
+    if (shouldReinitialize && !hasInitialized) {
+      // Only reinitialize once when tablist is first found
+      console.log('Tablist found, initializing extension');
       
       // Clear any existing timeout
       if (reinitializeTimeout) {
@@ -404,10 +381,11 @@ function observeDOMChanges() {
       
       reinitializeTimeout = setTimeout(() => {
         init();
-      }, 200);
+      }, 500); // Increased delay to be less aggressive
     }
     
-    if (shouldCheckTabs) {
+    if (shouldCheckTabs && !hasInitialized) {
+      // Only check tabs once during initial setup
       // Clear any existing timeout
       if (checkTabsTimeout) {
         clearTimeout(checkTabsTimeout);
@@ -415,15 +393,16 @@ function observeDOMChanges() {
       
       // Immediate check for faster response
       handleTabSelection();
-      // Also check again after a short delay to ensure everything is loaded
-      checkTabsTimeout = setTimeout(handleTabSelection, 100);
+      // Also check again after a longer delay to ensure everything is loaded
+      checkTabsTimeout = setTimeout(handleTabSelection, 300);
     }
   });
   
-  // Start observing
+  // Start observing with more specific configuration
   observer.observe(document.body, {
     childList: true,
-    subtree: true
+    subtree: true,
+    // Don't observe attributes or character data to reduce noise
   });
 }
 
@@ -444,6 +423,9 @@ function init() {
     console.log('Not on home page, skipping initialization');
     return;
   }
+  
+  // Set initialization flag to prevent multiple initializations
+  hasInitializedOnThisPage = true;
   
   // Clean up any existing CSS first
   cleanupCSS();
@@ -676,8 +658,6 @@ function hideScrollSnapElements() {
     return;
   }
   
-  console.log('Hiding ScrollSnap navigation elements');
-  
   // Find the TimelineTabs area first
   const timelineTabs = document.querySelector('.TimelineTabs') || document.querySelector('[data-testid="primaryColumn"]');
   if (!timelineTabs) {
@@ -716,7 +696,6 @@ function hideScrollSnapElements() {
       element.style.display = 'none';
       element.style.visibility = 'hidden';
       element.style.opacity = '0';
-      console.log('Hidden ScrollSnap element:', selector, element);
     });
   });
   
@@ -732,7 +711,6 @@ function hideScrollSnapElements() {
         element.style.display = 'none';
         element.style.visibility = 'hidden';
         element.style.opacity = '0';
-        console.log('Hidden potential ScrollSnap element:', className, element);
       }
     }
   });
@@ -762,7 +740,6 @@ function hideScrollSnapElements() {
         element.style.display = 'none';
         element.style.visibility = 'hidden';
         element.style.opacity = '0';
-        console.log('Hidden navigation element:', ariaLabel, className, textContent, element);
       }
     }
   });
@@ -780,7 +757,7 @@ function cleanupCSS() {
     immediateStyle.remove();
   }
   
-  // Clear ScrollSnap interval
+  // Clear any remaining intervals (for backward compatibility)
   if (window.xScrollSnapInterval) {
     clearInterval(window.xScrollSnapInterval);
     window.xScrollSnapInterval = null;
@@ -797,6 +774,7 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 // Listen for URL changes and handle navigation
 let currentUrl = window.location.href;
 let urlChangeTimeout = null;
+let hasInitializedOnThisPage = false;
 
 // Function to handle URL changes
 function handleUrlChange() {
@@ -805,6 +783,9 @@ function handleUrlChange() {
     currentUrl = newUrl;
     console.log('URL changed to:', newUrl);
     
+    // Reset initialization flag for new page
+    hasInitializedOnThisPage = false;
+    
     // Clear any existing timeout
     if (urlChangeTimeout) {
       clearTimeout(urlChangeTimeout);
@@ -812,10 +793,10 @@ function handleUrlChange() {
     
     if (isHomePage()) {
       console.log('Navigated to home page, initializing extension');
-      // Small delay to ensure DOM is ready, but don't reinitialize too frequently
+      // Longer delay to ensure DOM is ready and avoid interference
       urlChangeTimeout = setTimeout(() => {
         init();
-      }, 200);
+      }, 500);
     } else {
       console.log('Left home page, cleaning up CSS');
       cleanupCSS();
@@ -824,7 +805,7 @@ function handleUrlChange() {
 }
 
 // Monitor URL changes less frequently to avoid performance issues
-setInterval(handleUrlChange, 2000);
+setInterval(handleUrlChange, 3000); // Increased from 2000ms to 3000ms
 
 // Also listen for browser navigation events
 window.addEventListener('popstate', handleUrlChange);
@@ -835,12 +816,12 @@ const originalReplaceState = history.replaceState;
 
 history.pushState = function(...args) {
   originalPushState.apply(history, args);
-  setTimeout(handleUrlChange, 50);
+  setTimeout(handleUrlChange, 100); // Increased from 50ms to 100ms
 };
 
 history.replaceState = function(...args) {
   originalReplaceState.apply(history, args);
-  setTimeout(handleUrlChange, 50);
+  setTimeout(handleUrlChange, 100); // Increased from 50ms to 100ms
 };
 
 // Run initialization when DOM is ready
@@ -852,16 +833,16 @@ if (document.readyState === 'loading') {
 
 // Also run initialization when page becomes visible (for direct navigation)
 document.addEventListener('visibilitychange', function() {
-  if (!document.hidden && isHomePage()) {
-    console.log('Page became visible on home page, re-initializing');
-    setTimeout(init, 100);
+  if (!document.hidden && isHomePage() && !hasInitializedOnThisPage) {
+    console.log('Page became visible on home page, initializing');
+    setTimeout(init, 200); // Increased from 100ms to 200ms
   }
 });
 
 // Additional check for when content is loaded (for SPA navigation)
 document.addEventListener('DOMContentLoaded', function() {
   // Check if we're on home page after content loads
-  if (isHomePage()) {
+  if (isHomePage() && !hasInitializedOnThisPage) {
     console.log('DOM loaded on home page, checking for tabs');
     setTimeout(() => {
       const tablist = document.querySelector('[role="tablist"]');
@@ -869,6 +850,6 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Tablist found on page load, initializing');
         init();
       }
-    }, 500);
+    }, 1000); // Increased from 500ms to 1000ms
   }
 });
