@@ -72,10 +72,15 @@ function selectTab(tab) {
   console.log('Selected tab:', tab.textContent.trim());
 }
 
+// Function to check if any settings are enabled
+function hasActiveSettings() {
+  return settings.onlyShowLists || settings.hideForYou || settings.hideFollowing || settings.makeListDefault;
+}
+
 // Function to handle tab selection based on settings
 function handleTabSelectionWithSettings() {
-  // Only run on home page
-  if (!isHomePage()) {
+  // Only run on home page and if settings are active
+  if (!isHomePage() || !hasActiveSettings()) {
     return false;
   }
   
@@ -120,10 +125,6 @@ function handleTabSelectionWithSettings() {
     setTimeout(() => {
       hideScrollSnapElements();
     }, 100);
-    
-    // Removed the aggressive interval that was causing scrolling issues
-    // The hideScrollSnapElements function will be called once after tab selection
-    // and any additional hiding will be handled by the CSS injection
   }
   
   // Find the first visible tab to select
@@ -161,6 +162,11 @@ function handleTabSelectionWithSettings() {
 
 // Function to handle tab selection with retry mechanism
 function handleTabSelection() {
+  // Don't run if no settings are active
+  if (!hasActiveSettings()) {
+    return;
+  }
+  
   let attempts = 0;
   const maxAttempts = 5; // Reduced attempts to be less aggressive
   
@@ -192,8 +198,8 @@ function handleTabSelection() {
 // Function to handle user clicks on tabs based on settings
 function handleTabClicks() {
   document.addEventListener('click', (event) => {
-    // Only handle clicks on home page
-    if (!isHomePage()) {
+    // Only handle clicks on home page and if settings are active
+    if (!isHomePage() || !hasActiveSettings()) {
       return;
     }
     
@@ -263,37 +269,39 @@ function handleTabClicks() {
     }
   });
   
-  // Intercept any programmatic attempts to select the first or second tab
-  const originalSetAttribute = Element.prototype.setAttribute;
-  Element.prototype.setAttribute = function(name, value) {
-    if (name === 'aria-selected' && value === 'true') {
-      // Check if this is a tab and if it's the first or second tab
-      if (this.getAttribute('role') === 'tab') {
-        const tablist = this.closest('[role="tablist"]');
-        if (tablist) {
-          const tabs = tablist.querySelectorAll('[role="tab"]');
-          const tabIndex = Array.from(tabs).indexOf(this);
-          
-          // If this is the first tab (index 0) or second tab (index 1) and we want to select it
-          if ((tabIndex === 0 || tabIndex === 1) && tabs.length >= 3) {
-            // Only redirect if onlyShowLists is enabled (not for makeListDefault)
-            if (settings.onlyShowLists) {
-              console.log('Preventing tab', tabIndex + 1, 'selection, redirecting to 3rd tab');
-              // Instead of selecting the first or second tab, select the 3rd tab
-              const thirdTab = tabs[2];
-              if (thirdTab) {
-                // Call the original setAttribute on the 3rd tab instead
-                return originalSetAttribute.call(thirdTab, name, value);
+  // Only intercept programmatic attempts if settings are active
+  if (hasActiveSettings()) {
+    const originalSetAttribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function(name, value) {
+      if (name === 'aria-selected' && value === 'true') {
+        // Check if this is a tab and if it's the first or second tab
+        if (this.getAttribute('role') === 'tab') {
+          const tablist = this.closest('[role="tablist"]');
+          if (tablist) {
+            const tabs = tablist.querySelectorAll('[role="tab"]');
+            const tabIndex = Array.from(tabs).indexOf(this);
+            
+            // If this is the first tab (index 0) or second tab (index 1) and we want to select it
+            if ((tabIndex === 0 || tabIndex === 1) && tabs.length >= 3) {
+              // Only redirect if onlyShowLists is enabled (not for makeListDefault)
+              if (settings.onlyShowLists) {
+                console.log('Preventing tab', tabIndex + 1, 'selection, redirecting to 3rd tab');
+                // Instead of selecting the first or second tab, select the 3rd tab
+                const thirdTab = tabs[2];
+                if (thirdTab) {
+                  // Call the original setAttribute on the 3rd tab instead
+                  return originalSetAttribute.call(thirdTab, name, value);
+                }
               }
             }
           }
         }
       }
-    }
-    
-    // Call the original setAttribute for all other cases
-    return originalSetAttribute.call(this, name, value);
-  };
+      
+      // Call the original setAttribute for all other cases
+      return originalSetAttribute.call(this, name, value);
+    };
+  }
 }
 
 // Function to observe DOM changes and handle dynamic content
@@ -303,8 +311,8 @@ function observeDOMChanges() {
   let hasInitialized = false;
   
   const observer = new MutationObserver((mutations) => {
-    // Only observe on home page
-    if (!isHomePage()) {
+    // Only observe on home page and if settings are active
+    if (!isHomePage() || !hasActiveSettings()) {
       return;
     }
     
@@ -432,6 +440,12 @@ function init() {
     return;
   }
   
+  // Only initialize if settings are active
+  if (!hasActiveSettings()) {
+    console.log('No active settings, skipping initialization');
+    return;
+  }
+  
   // Set initialization flag to prevent multiple initializations
   hasInitializedOnThisPage = true;
   
@@ -467,8 +481,8 @@ function isHomePage() {
 
 // Function to inject CSS to hide tabs immediately
 function injectHideCSS() {
-  // Only inject CSS on home page
-  if (!isHomePage()) {
+  // Only inject CSS on home page and if settings are active
+  if (!isHomePage() || !hasActiveSettings()) {
     return;
   }
   
@@ -546,7 +560,7 @@ function injectHideCSS() {
 
 // Inject CSS immediately when script loads (before any content)
 function injectImmediateCSS() {
-  if (!isHomePage()) {
+  if (!isHomePage() || !hasActiveSettings()) {
     return;
   }
   
@@ -632,20 +646,26 @@ function loadSettings() {
     settings = items;
     console.log('Settings loaded:', settings);
     
-    // Inject CSS based on settings
-    injectHideCSS();
-    
-    // Inject immediate CSS based on settings
-    injectImmediateCSS();
-    
-    // Handle initial page load immediately
-    handleTabSelection();
-    
-    // Set up event listeners for user interactions
-    handleTabClicks();
-    
-    // Observe DOM changes for dynamic content
-    observeDOMChanges();
+    // Only proceed if settings are active
+    if (hasActiveSettings()) {
+      // Inject CSS based on settings
+      injectHideCSS();
+      
+      // Inject immediate CSS based on settings
+      injectImmediateCSS();
+      
+      // Handle initial page load immediately
+      handleTabSelection();
+      
+      // Set up event listeners for user interactions
+      handleTabClicks();
+      
+      // Observe DOM changes for dynamic content
+      observeDOMChanges();
+    } else {
+      console.log('No active settings, cleaning up any existing CSS');
+      cleanupCSS();
+    }
   });
 }
 
@@ -657,17 +677,20 @@ function updateSettings(newSettings) {
   // Clean up existing CSS
   cleanupCSS();
   
-  // Inject CSS based on new settings
-  injectHideCSS();
-  injectImmediateCSS();
-  
-  // Re-apply the current behavior based on new settings
-  handleTabSelection();
+  // Only proceed if settings are active
+  if (hasActiveSettings()) {
+    // Inject CSS based on new settings
+    injectHideCSS();
+    injectImmediateCSS();
+    
+    // Re-apply the current behavior based on new settings
+    handleTabSelection();
+  }
 }
 
 // Function to actively hide ScrollSnap navigation elements
 function hideScrollSnapElements() {
-  if (!isHomePage() || (!settings.onlyShowLists && !settings.hideForYou && !settings.hideFollowing)) {
+  if (!isHomePage() || !hasActiveSettings() || (!settings.onlyShowLists && !settings.hideForYou && !settings.hideFollowing)) {
     return;
   }
   
@@ -815,11 +838,17 @@ function handleUrlChange() {
     }
     
     if (isHomePage()) {
-      console.log('Navigated to home page, initializing extension');
-      // Longer delay to ensure DOM is ready and avoid interference
-      urlChangeTimeout = setTimeout(() => {
-        init();
-      }, 500);
+      console.log('Navigated to home page, checking if extension should initialize');
+      // Only initialize if settings are active
+      if (hasActiveSettings()) {
+        console.log('Active settings found, initializing extension');
+        urlChangeTimeout = setTimeout(() => {
+          init();
+        }, 500);
+      } else {
+        console.log('No active settings, skipping initialization');
+        cleanupCSS();
+      }
     } else {
       console.log('Left home page, cleaning up CSS');
       cleanupCSS();
@@ -827,45 +856,56 @@ function handleUrlChange() {
   }
 }
 
-// Monitor URL changes less frequently to avoid performance issues
-setInterval(handleUrlChange, 3000); // Increased from 2000ms to 3000ms
-
-// Also listen for browser navigation events
-window.addEventListener('popstate', handleUrlChange);
-
-// Listen for pushstate/replacestate (SPA navigation)
-const originalPushState = history.pushState;
-const originalReplaceState = history.replaceState;
-
-history.pushState = function(...args) {
-  originalPushState.apply(history, args);
-  setTimeout(handleUrlChange, 100); // Increased from 50ms to 100ms
-};
-
-history.replaceState = function(...args) {
-  originalReplaceState.apply(history, args);
-  setTimeout(handleUrlChange, 100); // Increased from 50ms to 100ms
-};
+// Only set up URL monitoring if settings are active
+function setupUrlMonitoring() {
+  // Monitor URL changes less frequently to avoid performance issues
+  setInterval(handleUrlChange, 3000);
+  
+  // Also listen for browser navigation events
+  window.addEventListener('popstate', handleUrlChange);
+  
+  // Listen for pushstate/replacestate (SPA navigation)
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+  
+  history.pushState = function(...args) {
+    originalPushState.apply(history, args);
+    setTimeout(handleUrlChange, 100);
+  };
+  
+  history.replaceState = function(...args) {
+    originalReplaceState.apply(history, args);
+    setTimeout(handleUrlChange, 100);
+  };
+}
 
 // Run initialization when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', function() {
+    // Only initialize if settings are active
+    if (hasActiveSettings()) {
+      init();
+    }
+  });
 } else {
-  init();
+  // Only initialize if settings are active
+  if (hasActiveSettings()) {
+    init();
+  }
 }
 
 // Also run initialization when page becomes visible (for direct navigation)
 document.addEventListener('visibilitychange', function() {
-  if (!document.hidden && isHomePage() && !hasInitializedOnThisPage) {
+  if (!document.hidden && isHomePage() && !hasInitializedOnThisPage && hasActiveSettings()) {
     console.log('Page became visible on home page, initializing');
-    setTimeout(init, 200); // Increased from 100ms to 200ms
+    setTimeout(init, 200);
   }
 });
 
 // Additional check for when content is loaded (for SPA navigation)
 document.addEventListener('DOMContentLoaded', function() {
   // Check if we're on home page after content loads
-  if (isHomePage() && !hasInitializedOnThisPage) {
+  if (isHomePage() && !hasInitializedOnThisPage && hasActiveSettings()) {
     console.log('DOM loaded on home page, checking for tabs');
     setTimeout(() => {
       const tablist = document.querySelector('[role="tablist"]');
@@ -873,6 +913,22 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Tablist found on page load, initializing');
         init();
       }
-    }, 1000); // Increased from 500ms to 1000ms
+    }, 1000);
+  }
+});
+
+// Load settings first and then set up monitoring
+loadSettings();
+
+// Set up URL monitoring after settings are loaded
+chrome.storage.sync.get({
+  onlyShowLists: false,
+  hideForYou: false,
+  hideFollowing: false,
+  makeListDefault: false
+}, function(items) {
+  settings = items;
+  if (hasActiveSettings()) {
+    setupUrlMonitoring();
   }
 });
