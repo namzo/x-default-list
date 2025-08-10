@@ -316,11 +316,14 @@ function observeDOMChanges() {
         // Check if tablist was added or modified (only for major changes)
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            // Only reinitialize if we find a completely new tablist (likely navigation)
-            if (node.querySelector && node.querySelector('[role="tablist"]') && !hasInitialized) {
-              shouldCheckTabs = true;
-              shouldReinitialize = true;
-              hasInitialized = true;
+            // Check if we find a tablist - this could be navigation back to home
+            if (node.querySelector && node.querySelector('[role="tablist"]')) {
+              // If we haven't initialized yet, or if this is a new tablist (navigation)
+              if (!hasInitialized || !document.querySelector('[role="tablist"]')) {
+                shouldCheckTabs = true;
+                shouldReinitialize = true;
+                hasInitialized = true;
+              }
             }
           }
         });
@@ -370,8 +373,8 @@ function observeDOMChanges() {
       }
     });
     
-    if (shouldReinitialize && !hasInitialized) {
-      // Only reinitialize once when tablist is first found
+    if (shouldReinitialize) {
+      // Reinitialize when tablist is found (could be navigation back to home)
       console.log('Tablist found, initializing extension');
       
       // Clear any existing timeout
@@ -384,8 +387,8 @@ function observeDOMChanges() {
       }, 500); // Increased delay to be less aggressive
     }
     
-    if (shouldCheckTabs && !hasInitialized) {
-      // Only check tabs once during initial setup
+    if (shouldCheckTabs) {
+      // Check tabs when tablist is found
       // Clear any existing timeout
       if (checkTabsTimeout) {
         clearTimeout(checkTabsTimeout);
@@ -404,6 +407,11 @@ function observeDOMChanges() {
     subtree: true,
     // Don't observe attributes or character data to reduce noise
   });
+  
+  // Return a function to reset the initialization flag (for URL changes)
+  return function resetInitialization() {
+    hasInitialized = false;
+  };
 }
 
 // Global settings object
@@ -432,6 +440,11 @@ function init() {
   
   // Load settings first, then inject CSS based on settings
   loadSettings();
+  
+  // Store the reset function from observeDOMChanges
+  if (!window.resetDOMObserver) {
+    window.resetDOMObserver = observeDOMChanges();
+  }
 }
 
 // Function to check if we're on the home page
@@ -762,6 +775,11 @@ function cleanupCSS() {
     clearInterval(window.xScrollSnapInterval);
     window.xScrollSnapInterval = null;
   }
+  
+  // Reset DOM observer to allow re-initialization when returning to home page
+  if (window.resetDOMObserver) {
+    window.resetDOMObserver();
+  }
 }
 
 // Listen for messages from popup
@@ -785,6 +803,11 @@ function handleUrlChange() {
     
     // Reset initialization flag for new page
     hasInitializedOnThisPage = false;
+    
+    // Reset DOM observer to allow re-initialization
+    if (window.resetDOMObserver) {
+      window.resetDOMObserver();
+    }
     
     // Clear any existing timeout
     if (urlChangeTimeout) {
