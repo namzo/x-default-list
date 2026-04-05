@@ -6,10 +6,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const enabledState = document.getElementById('enabledState');
     const hideForYou = document.getElementById('hideForYou');
     const hideFollowing = document.getElementById('hideFollowing');
-    const makeListDefault = document.getElementById('makeListDefault');
-    const makeFollowingDefault = document.getElementById('makeFollowingDefault');
     const listSelectorWrapper = document.getElementById('listSelectorWrapper');
+    const listHint = document.getElementById('listHint');
     const selectedList = document.getElementById('selectedList');
+    const radios = document.querySelectorAll('input[name="defaultTimeline"]');
 
     // Load saved settings
     chrome.storage.sync.get({
@@ -23,14 +23,17 @@ document.addEventListener('DOMContentLoaded', function() {
         extensionEnabled.checked = items.extensionEnabled;
         hideForYou.checked = items.hideForYou;
         hideFollowing.checked = items.hideFollowing;
-        makeListDefault.checked = items.makeListDefault;
-        makeFollowingDefault.checked = items.makeFollowingDefault;
+
+        // Translate stored booleans → radio selection
+        if (items.makeListDefault) {
+            document.getElementById('defaultList').checked = true;
+            listHint.style.display = 'block';
+            fetchAndPopulateLists(items.selectedList);
+        } else {
+            document.getElementById('defaultFollowing').checked = true;
+        }
 
         updateUIState(items.extensionEnabled);
-
-        if (items.makeListDefault) {
-            fetchAndPopulateLists(items.selectedList);
-        }
     });
 
     function updateUIState(isEnabled) {
@@ -44,6 +47,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function fetchAndPopulateLists(currentValue) {
+        listHint.style.display = 'block';
         listSelectorWrapper.style.display = 'block';
 
         chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
@@ -66,7 +70,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
                 selectedList.disabled = false;
-                selectedList.innerHTML = '<option value="">— select a list —</option>';
+                selectedList.innerHTML = '<option value="">Select a list</option>';
                 lists.forEach(function(name) {
                     const opt = document.createElement('option');
                     opt.value = name;
@@ -78,13 +82,19 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function getDefaultTimelineValue() {
+        const checked = document.querySelector('input[name="defaultTimeline"]:checked');
+        return checked ? checked.value : 'following';
+    }
+
     function saveAndApplySettings() {
+        const val = getDefaultTimelineValue();
         const settings = {
             extensionEnabled: extensionEnabled.checked,
             hideForYou: hideForYou.checked,
             hideFollowing: hideFollowing.checked,
-            makeListDefault: makeListDefault.checked,
-            makeFollowingDefault: makeFollowingDefault.checked,
+            makeListDefault: val === 'list',
+            makeFollowingDefault: val === 'following',
             selectedList: selectedList.value
         };
 
@@ -102,21 +112,23 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    makeListDefault.addEventListener('change', function() {
-        if (makeListDefault.checked) {
-            chrome.storage.sync.get({ selectedList: '' }, function(items) {
-                fetchAndPopulateLists(items.selectedList);
-            });
-        } else {
-            listSelectorWrapper.style.display = 'none';
-        }
-        saveAndApplySettings();
+    // Radio group change handler
+    radios.forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            if (this.value === 'list') {
+                chrome.storage.sync.get({ selectedList: '' }, function(items) {
+                    fetchAndPopulateLists(items.selectedList);
+                });
+            } else {
+                listHint.style.display = 'none';
+                listSelectorWrapper.style.display = 'none';
+            }
+            saveAndApplySettings();
+        });
     });
 
     selectedList.addEventListener('change', saveAndApplySettings);
-
     extensionEnabled.addEventListener('change', saveAndApplySettings);
     hideForYou.addEventListener('change', saveAndApplySettings);
     hideFollowing.addEventListener('change', saveAndApplySettings);
-    makeFollowingDefault.addEventListener('change', saveAndApplySettings);
 });
