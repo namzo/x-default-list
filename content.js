@@ -912,10 +912,10 @@ function cleanupCSS() {
   if (timelineTabs) {
     const hiddenElements = timelineTabs.querySelectorAll('[style*="display: none"], [style*="visibility: hidden"]');
     hiddenElements.forEach(element => {
-      const className = element.className || '';
-      if (className.includes('ScrollSnap') || 
-          className.includes('scroll') || 
-          className.includes('nav') || 
+      const className = typeof element.className === 'string' ? element.className : '';
+      if (className.includes('ScrollSnap') ||
+          className.includes('scroll') ||
+          className.includes('nav') ||
           className.includes('arrow') ||
           className.includes('button')) {
         element.style.display = '';
