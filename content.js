@@ -242,7 +242,10 @@ function handleTabSelectionWithSettings() {
   }
   
   if (firstVisibleTab) {
-    // Use the helper function to select the tab
+    // Skip clicking if the tab is already selected — avoids triggering X.com's dropdown
+    if (firstVisibleTab.getAttribute('aria-selected') === 'true') {
+      return true;
+    }
     selectTab(firstVisibleTab);
     return true;
   }
