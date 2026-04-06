@@ -1,3 +1,6 @@
+// Flag set when the user is intentionally clicking a tab — suppresses auto-redirect.
+let _userClickingTab = false;
+
 // Intercept X.com's programmatic tab selection as early as possible.
 // Must run synchronously before any async code so it's active before X.com renders.
 (function setupAttributeOverride() {
@@ -5,6 +8,10 @@
   window.__xOriginalSetAttribute = Element.prototype.setAttribute;
   Element.prototype.setAttribute = function(name, value) {
     if (name === 'aria-selected' && value === 'true' && this.getAttribute('role') === 'tab') {
+      // Don't redirect if the user manually clicked a tab
+      if (_userClickingTab) {
+        return window.__xOriginalSetAttribute.call(this, name, value);
+      }
       const tablist = this.closest('[role="tablist"]');
       if (tablist) {
         const tabs = tablist.querySelectorAll('[role="tab"]');
@@ -108,7 +115,7 @@ function startFollowingEnforcement() {
   if (!tablist) return;
 
   _followingEnforcementObserver = new MutationObserver(() => {
-    if (_followingEnforcing || !settings.makeFollowingDefault) return;
+    if (_followingEnforcing || !settings.makeFollowingDefault || isBackNavigation) return;
 
     const tabs = tablist.querySelectorAll('[role="tab"]');
     if (tabs.length < 2) return;
@@ -246,6 +253,25 @@ function handleTabSelectionWithSettings() {
     if (firstVisibleTab.getAttribute('aria-selected') === 'true') {
       return true;
     }
+
+    // On back navigation: restore the tab the user was on (or do nothing) —
+    // never force the default. Keep isBackNavigation=true so retries also skip.
+    if (isBackNavigation) {
+      if (lastActiveTabIndex !== -1) {
+        const savedTab = tabs[lastActiveTabIndex];
+        const savedTabParent = savedTab && savedTab.closest('[role="presentation"]');
+        if (savedTab && savedTabParent && savedTabParent.style.display !== 'none') {
+          console.log('[TabSelector] Back navigation: restoring tab index', lastActiveTabIndex);
+          lastActiveTabIndex = -1; // clear index but keep isBackNavigation=true
+          if (savedTab.getAttribute('aria-selected') !== 'true') {
+            selectTab(savedTab);
+          }
+        }
+      }
+      // Don't force default on back navigation regardless
+      return true;
+    }
+
     selectTab(firstVisibleTab);
     return true;
   }
@@ -290,6 +316,20 @@ function handleTabSelection() {
 
 // Function to handle user clicks on tabs based on settings
 function handleTabClicks() {
+  // Capture phase: set flag before X.com processes the click, so setAttribute override allows it
+  document.addEventListener('click', (event) => {
+    if (!isHomePage() || isExtensionDisabled() || !hasActiveSettings()) return;
+    const clickedTab = event.target.closest('[role="tab"]');
+    if (clickedTab && clickedTab.closest('[role="tablist"]')) {
+      _userClickingTab = true;
+      _followingEnforcing = true;
+      setTimeout(() => {
+        _userClickingTab = false;
+        _followingEnforcing = false;
+      }, 1000);
+    }
+  }, true); // capture phase
+
   document.addEventListener('click', (event) => {
     // Only handle clicks on home page and if extension is enabled and settings are active
     if (!isHomePage() || isExtensionDisabled() || !hasActiveSettings()) {
@@ -341,8 +381,9 @@ function handleTabClicks() {
         // Users should be able to freely click on any tab after the initial selection
       }
       
-      // User clicked on a valid tab, allow it
-      console.log('User clicked on a valid tab, allowing user selection');
+      // User clicked a valid tab intentionally — pause enforcement so it doesn't fight them
+      _followingEnforcing = true;
+      setTimeout(() => { _followingEnforcing = false; }, 2000);
     }
   });
   
@@ -970,6 +1011,8 @@ chrome.storage.onChanged.addListener(function(changes, areaName) {
 let currentUrl = window.location.href;
 let urlChangeTimeout = null;
 let hasInitializedOnThisPage = false;
+let lastActiveTabIndex = -1; // which tab was active when user left home
+let isBackNavigation = false; // true when triggered by back/forward button
 
 // Function to handle URL changes
 function handleUrlChange() {
@@ -1018,18 +1061,35 @@ function setupUrlMonitoring() {
   // Monitor URL changes less frequently to avoid performance issues
   setInterval(handleUrlChange, 3000);
   
-  // Also listen for browser navigation events
-  window.addEventListener('popstate', handleUrlChange);
-  
-  // Listen for pushstate/replacestate (SPA navigation)
+  // Also listen for browser navigation events (back/forward button)
+  window.addEventListener('popstate', () => {
+    isBackNavigation = true;
+    console.log('[TabSelector] popstate fired — back navigation detected');
+    handleUrlChange();
+  });
+
+  // Listen for pushstate/replacestate (SPA forward navigation e.g. clicking a tweet)
   const originalPushState = history.pushState;
   const originalReplaceState = history.replaceState;
-  
+
   history.pushState = function(...args) {
+    // Save active tab BEFORE URL changes — isHomePage() still returns true here
+    if (isHomePage()) {
+      const tablist = document.querySelector('[role="tablist"]');
+      if (tablist) {
+        const tabs = tablist.querySelectorAll('[role="tab"]');
+        const activeIndex = Array.from(tabs).findIndex(t => t.getAttribute('aria-selected') === 'true');
+        if (activeIndex !== -1) {
+          lastActiveTabIndex = activeIndex;
+          console.log('[TabSelector] pushState: saved active tab index', lastActiveTabIndex, tabs[activeIndex].textContent.trim());
+        }
+      }
+    }
+    isBackNavigation = false;
     originalPushState.apply(history, args);
     setTimeout(handleUrlChange, 100);
   };
-  
+
   history.replaceState = function(...args) {
     originalReplaceState.apply(history, args);
     setTimeout(handleUrlChange, 100);
