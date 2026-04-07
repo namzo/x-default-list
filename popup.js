@@ -9,13 +9,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const listSelectorWrapper = document.getElementById('listSelectorWrapper');
     const listHint = document.getElementById('listHint');
     const selectedList = document.getElementById('selectedList');
-    const radios = document.querySelectorAll('input[name="defaultTimeline"]');
+    const defaultTimeline = document.getElementById('defaultTimeline');
 
     // Load saved settings
     chrome.storage.sync.get({
         extensionEnabled: true,
         hideForYou: false,
         hideFollowing: false,
+        makeForYouDefault: false,
         makeListDefault: false,
         makeFollowingDefault: false,
         selectedList: ''
@@ -24,17 +25,38 @@ document.addEventListener('DOMContentLoaded', function() {
         hideForYou.checked = items.hideForYou;
         hideFollowing.checked = items.hideFollowing;
 
-        // Translate stored booleans → radio selection
+        // Translate stored booleans → select value
         if (items.makeListDefault) {
-            document.getElementById('defaultList').checked = true;
+            defaultTimeline.value = 'list';
             listHint.style.display = 'block';
             fetchAndPopulateLists(items.selectedList);
+        } else if (items.makeFollowingDefault) {
+            defaultTimeline.value = 'following';
         } else {
-            document.getElementById('defaultFollowing').checked = true;
+            defaultTimeline.value = 'forYou';
         }
 
+        syncSelectWithHideState();
         updateUIState(items.extensionEnabled);
     });
+
+    // Disable conflicting options in the select and auto-switch if needed
+    function syncSelectWithHideState() {
+        const forYouOption = defaultTimeline.querySelector('option[value="forYou"]');
+        const followingOption = defaultTimeline.querySelector('option[value="following"]');
+
+        forYouOption.disabled = hideForYou.checked;
+        followingOption.disabled = hideFollowing.checked;
+
+        // If the currently selected option is now hidden, pick the first available one
+        const currentOption = defaultTimeline.querySelector('option:checked');
+        if (currentOption && currentOption.disabled) {
+            const firstAvailable = defaultTimeline.querySelector('option:not([disabled]):not([value=""])');
+            if (firstAvailable) {
+                defaultTimeline.value = firstAvailable.value;
+            }
+        }
+    }
 
     function updateUIState(isEnabled) {
         if (isEnabled) {
@@ -82,17 +104,13 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function getDefaultTimelineValue() {
-        const checked = document.querySelector('input[name="defaultTimeline"]:checked');
-        return checked ? checked.value : 'following';
-    }
-
     function saveAndApplySettings() {
-        const val = getDefaultTimelineValue();
+        const val = defaultTimeline.value;
         const settings = {
             extensionEnabled: extensionEnabled.checked,
             hideForYou: hideForYou.checked,
             hideFollowing: hideFollowing.checked,
+            makeForYouDefault: val === 'forYou',
             makeListDefault: val === 'list',
             makeFollowingDefault: val === 'following',
             selectedList: selectedList.value
@@ -112,23 +130,30 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Radio group change handler
-    radios.forEach(function(radio) {
-        radio.addEventListener('change', function() {
-            if (this.value === 'list') {
-                chrome.storage.sync.get({ selectedList: '' }, function(items) {
-                    fetchAndPopulateLists(items.selectedList);
-                });
-            } else {
-                listHint.style.display = 'none';
-                listSelectorWrapper.style.display = 'none';
-            }
-            saveAndApplySettings();
-        });
+    // Select change handler
+    defaultTimeline.addEventListener('change', function() {
+        if (this.value === 'list') {
+            chrome.storage.sync.get({ selectedList: '' }, function(items) {
+                fetchAndPopulateLists(items.selectedList);
+            });
+        } else {
+            listHint.style.display = 'none';
+            listSelectorWrapper.style.display = 'none';
+        }
+        saveAndApplySettings();
+    });
+
+    // Hide checkbox change handlers — sync select before saving
+    hideForYou.addEventListener('change', function() {
+        syncSelectWithHideState();
+        saveAndApplySettings();
+    });
+
+    hideFollowing.addEventListener('change', function() {
+        syncSelectWithHideState();
+        saveAndApplySettings();
     });
 
     selectedList.addEventListener('change', saveAndApplySettings);
     extensionEnabled.addEventListener('change', saveAndApplySettings);
-    hideForYou.addEventListener('change', saveAndApplySettings);
-    hideFollowing.addEventListener('change', saveAndApplySettings);
 });

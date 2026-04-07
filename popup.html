@@ -146,79 +146,23 @@
             flex: 1;
         }
 
-        /* Radio group for default timeline */
-        .option-group-label {
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: #657786;
-            margin-bottom: 8px;
-        }
-
-        .radio-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            margin-bottom: 10px;
-        }
-
-        .radio-option {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 14px;
+        /* Default timeline select */
+        #defaultTimeline {
+            padding: 3px 6px;
+            border-radius: 6px;
+            border: 1px solid #ccd6dd;
+            font-size: 13px;
+            background: #fff;
             color: #14171a;
             cursor: pointer;
-        }
-
-        input[type="radio"] {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 16px;
-            height: 16px;
-            border: 2px solid #ccc;
-            border-radius: 50%;
-            background: #fff;
-            cursor: pointer;
-            position: relative;
             flex-shrink: 0;
         }
 
-        input[type="radio"]:checked {
-            border-color: #1da1f2;
-            background: #fff;
-        }
-
-        input[type="radio"]:checked::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #1da1f2;
-        }
-
         @media (prefers-color-scheme: dark) {
-            input[type="radio"] {
-                border-color: #555;
-                background: #111;
-            }
-
-            input[type="radio"]:checked {
-                border-color: #1da1f2;
-                background: #111;
-            }
-
-            .option-group-label {
-                color: #888888;
-            }
-
-            .radio-option {
+            #defaultTimeline {
+                background: #1a1a1a;
                 color: #ffffff;
+                border-color: #444;
             }
         }
 
@@ -276,16 +220,13 @@
 
     <!-- Enabled State Content -->
     <div id="enabledState" class="content-enabled">
-        <div class="option-group-label">Default timeline</div>
-        <div class="radio-group">
-            <label class="radio-option">
-                <input type="radio" name="defaultTimeline" id="defaultFollowing" value="following">
-                Following
-            </label>
-            <label class="radio-option">
-                <input type="radio" name="defaultTimeline" id="defaultList" value="list">
-                My lists
-            </label>
+        <div class="option">
+            <label for="defaultTimeline">Default timeline</label>
+            <select id="defaultTimeline">
+                <option value="forYou">For you</option>
+                <option value="following">Following</option>
+                <option value="list">My lists</option>
+            </select>
         </div>
         <p id="listHint" class="option-hint" style="display: none;">To use a list, first pin it: click <strong>More</strong> on the left sidebar → <strong>Lists</strong> → click the <strong>Pin</strong> icon next to your list.</p>
         <div id="listSelectorWrapper">

@@ -1,5 +1,7 @@
 // Flag set when the user is intentionally clicking a tab — suppresses auto-redirect.
 let _userClickingTab = false;
+// Flag set when the extension itself is selecting a tab — suppresses auto-redirect.
+let _extensionSelecting = false;
 
 // Intercept X.com's programmatic tab selection as early as possible.
 // Must run synchronously before any async code so it's active before X.com renders.
@@ -8,8 +10,17 @@ let _userClickingTab = false;
   window.__xOriginalSetAttribute = Element.prototype.setAttribute;
   Element.prototype.setAttribute = function(name, value) {
     if (name === 'aria-selected' && value === 'true' && this.getAttribute('role') === 'tab') {
-      // Don't redirect if the user manually clicked a tab
-      if (_userClickingTab) {
+      // Don't redirect if the user manually clicked a tab, the extension is selecting one,
+      // or we're returning from a back navigation (let X.com restore its own state)
+      if (_userClickingTab || _extensionSelecting || isBackNavigation) {
+        // Track which tab is actually being shown
+        try {
+          const tl = this.closest('[role="tablist"]');
+          if (tl) {
+            const idx = Array.from(tl.querySelectorAll('[role="tab"]')).indexOf(this);
+            if (idx !== -1) document.documentElement.setAttribute('data-x-tab', idx);
+          }
+        } catch(e) {}
         return window.__xOriginalSetAttribute.call(this, name, value);
       }
       const tablist = this.closest('[role="tablist"]');
@@ -18,16 +29,17 @@ let _userClickingTab = false;
         const tabIndex = Array.from(tabs).indexOf(this);
         if (tabIndex === 0 && tabs.length >= 2) {
           if (settings.makeListDefault && tabs.length >= 3) {
-            console.log('Intercepting tab 0 selection, redirecting to list tab');
             let targetTab = tabs[2];
             if (settings.selectedList) {
               const found = Array.from(tabs).slice(2).find(t => t.textContent.trim() === settings.selectedList);
               if (found) targetTab = found;
             }
+            const targetIdx = Array.from(tabs).indexOf(targetTab);
+            document.documentElement.setAttribute('data-x-tab', targetIdx);
             return window.__xOriginalSetAttribute.call(targetTab, name, value);
           }
           if (settings.makeFollowingDefault) {
-            console.log('Intercepting tab 0 selection, redirecting to Following tab');
+            document.documentElement.setAttribute('data-x-tab', 1);
             return window.__xOriginalSetAttribute.call(tabs[1], name, value);
           }
         }
@@ -66,14 +78,25 @@ function selectTab(tab) {
   const tablist = tab.closest('[role="tablist"]');
   if (!tablist) return;
 
+  // Suppress the setAttribute override while we select — otherwise it redirects us in a loop
+  _extensionSelecting = true;
+  setTimeout(() => { _extensionSelecting = false; }, 500);
+
   const tabs = tablist.querySelectorAll('[role="tab"]');
 
-  // Update aria-selected state
+  // Save selected tab index to sessionStorage so back navigation can restore it
+  const tabIndex = Array.from(tabs).indexOf(tab);
+  if (tabIndex !== -1) {
+    document.documentElement.setAttribute('data-x-tab', tabIndex);
+  }
+
+  // Update aria-selected state — use original setAttribute to bypass our override
+  const _setAttribute = window.__xOriginalSetAttribute || Element.prototype.setAttribute;
   tabs.forEach(t => {
-    t.setAttribute('aria-selected', 'false');
+    _setAttribute.call(t, 'aria-selected', 'false');
     t.classList.remove('active', 'selected', 'r-1kihuf0');
   });
-  tab.setAttribute('aria-selected', 'true');
+  _setAttribute.call(tab, 'aria-selected', 'true');
   tab.classList.add('r-1kihuf0');
 
   const scrollY = window.scrollY;
@@ -107,6 +130,8 @@ function selectTab(tab) {
 // Persistent enforcement: watch the tablist and correct X.com if it resets the active tab.
 let _followingEnforcementObserver = null;
 let _followingEnforcing = false;
+let _forYouEnforcementObserver = null;
+let _forYouEnforcing = false;
 
 function startFollowingEnforcement() {
   if (_followingEnforcementObserver) return; // already running
@@ -150,6 +175,45 @@ function stopFollowingEnforcement() {
   _followingEnforcing = false;
 }
 
+function startForYouEnforcement() {
+  if (_forYouEnforcementObserver) return;
+
+  const tablist = document.querySelector('[role="tablist"]');
+  if (!tablist) return;
+
+  _forYouEnforcementObserver = new MutationObserver(() => {
+    if (_forYouEnforcing || !settings.makeForYouDefault || isBackNavigation || _userClickingTab) return;
+
+    const tabs = tablist.querySelectorAll('[role="tab"]');
+    if (tabs.length < 1) return;
+
+    const activeTab = Array.from(tabs).find(t => t.getAttribute('aria-selected') === 'true');
+    if (!activeTab) return;
+
+    const activeIndex = Array.from(tabs).indexOf(activeTab);
+    if (activeIndex !== 0) {
+      _forYouEnforcing = true;
+      selectTab(tabs[0]);
+      setTimeout(() => { _forYouEnforcing = false; }, 1000);
+    }
+  });
+
+  _forYouEnforcementObserver.observe(tablist, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['aria-selected'],
+    childList: true,
+  });
+}
+
+function stopForYouEnforcement() {
+  if (_forYouEnforcementObserver) {
+    _forYouEnforcementObserver.disconnect();
+    _forYouEnforcementObserver = null;
+  }
+  _forYouEnforcing = false;
+}
+
 // Function to check if extension is completely disabled
 function isExtensionDisabled() {
   return !settings.extensionEnabled;
@@ -157,7 +221,7 @@ function isExtensionDisabled() {
 
 // Function to check if any settings are enabled
 function hasActiveSettings() {
-  return settings.extensionEnabled && (settings.hideForYou || settings.hideFollowing || settings.makeListDefault || settings.makeFollowingDefault);
+  return settings.extensionEnabled && (settings.hideForYou || settings.hideFollowing || settings.makeListDefault || settings.makeFollowingDefault || settings.makeForYouDefault);
 }
 
 // Function to handle tab selection based on settings
@@ -178,9 +242,9 @@ function handleTabSelectionWithSettings() {
   // Get all tab elements within the tablist
   const tabs = tablist.querySelectorAll('[role="tab"]');
   
-  if (tabs.length < 3) {
-    console.log('No 3rd tab found (only', tabs.length, 'tabs available), doing nothing');
-    return true; // Return true to stop retrying since there's no 3rd tab
+  if (tabs.length < 2) {
+    console.log('Tablist has fewer than 2 tabs, retrying...');
+    return false;
   }
   
   // Show all tab parent divs first
@@ -213,8 +277,17 @@ function handleTabSelectionWithSettings() {
   // Find the first visible tab to select
   let firstVisibleTab = null;
   
+  // If makeForYouDefault is enabled, select tabs[0] (For you)
+  if (settings.makeForYouDefault && tabs.length >= 1) {
+    const forYouTab = tabs[0];
+    const forYouTabParent = forYouTab.closest('[role="presentation"]');
+    if (forYouTabParent && forYouTabParent.style.display !== 'none') {
+      firstVisibleTab = forYouTab;
+    }
+  }
+
   // If makeListDefault is enabled, find the target list tab by name (or fall back to tabs[2])
-  if (settings.makeListDefault && tabs.length >= 3) {
+  if (!firstVisibleTab && settings.makeListDefault && tabs.length >= 3) {
     let targetTab = tabs[2];
     if (settings.selectedList) {
       const found = Array.from(tabs).slice(2).find(t => t.textContent.trim() === settings.selectedList);
@@ -320,13 +393,20 @@ function handleTabClicks() {
   document.addEventListener('click', (event) => {
     if (!isHomePage() || isExtensionDisabled() || !hasActiveSettings()) return;
     const clickedTab = event.target.closest('[role="tab"]');
-    if (clickedTab && clickedTab.closest('[role="tablist"]')) {
-      _userClickingTab = true;
-      _followingEnforcing = true;
-      setTimeout(() => {
-        _userClickingTab = false;
-        _followingEnforcing = false;
-      }, 1000);
+    if (clickedTab) {
+      const tl = clickedTab.closest('[role="tablist"]');
+      if (tl) {
+        const idx = Array.from(tl.querySelectorAll('[role="tab"]')).indexOf(clickedTab);
+        if (idx !== -1 && event.isTrusted) document.documentElement.setAttribute('data-x-tab', idx);
+        _userClickingTab = true;
+        _followingEnforcing = true;
+        _forYouEnforcing = true;
+        setTimeout(() => {
+          _userClickingTab = false;
+          _followingEnforcing = false;
+          _forYouEnforcing = false;
+        }, 1000);
+      }
     }
   }, true); // capture phase
 
@@ -516,6 +596,7 @@ let settings = {
   extensionEnabled: true,
   hideForYou: false,
   hideFollowing: false,
+  makeForYouDefault: false,
   makeListDefault: false,
   makeFollowingDefault: false,
   selectedList: ''
@@ -733,6 +814,7 @@ function injectImmediateCSS() {
   }
 }
 
+
 // Function to load settings from storage
 function loadSettings() {
   chrome.storage.sync.get({
@@ -757,12 +839,12 @@ function loadSettings() {
     if (hasActiveSettings()) {
       // Inject CSS based on settings
       injectHideCSS();
-      
+
       // Inject immediate CSS based on settings
       injectImmediateCSS();
-      
-      // Handle initial page load immediately
-      handleTabSelection();
+
+      // Handle initial page load immediately — skip if back navigation is restoring
+      if (!isBackNavigation) handleTabSelection();
 
       // Set up event listeners for user interactions
       handleTabClicks();
@@ -770,14 +852,18 @@ function loadSettings() {
       // Observe DOM changes for dynamic content
       observeDOMChanges();
 
-      // Start persistent Following enforcement if needed
+      // Start persistent enforcement if needed
       if (settings.makeFollowingDefault) {
         setTimeout(startFollowingEnforcement, 300);
+      }
+      if (settings.makeForYouDefault) {
+        setTimeout(startForYouEnforcement, 300);
       }
     } else {
       console.log('No active settings, cleaning up any existing CSS');
       cleanupCSS();
       stopFollowingEnforcement();
+      stopForYouEnforcement();
     }
   });
 }
@@ -806,15 +892,20 @@ function updateSettings(newSettings) {
     // Re-apply the current behavior based on new settings
     handleTabSelection();
 
-    // Start or stop persistent Following enforcement
+    // Start or stop persistent enforcement
     if (settings.makeFollowingDefault) {
-      // Give handleTabSelection a moment to fire the initial click first
       setTimeout(startFollowingEnforcement, 300);
     } else {
       stopFollowingEnforcement();
     }
+    if (settings.makeForYouDefault) {
+      setTimeout(startForYouEnforcement, 300);
+    } else {
+      stopForYouEnforcement();
+    }
   } else {
     stopFollowingEnforcement();
+    stopForYouEnforcement();
   }
 }
 
@@ -1043,7 +1134,7 @@ function handleUrlChange() {
       } else if (hasActiveSettings()) {
         console.log('Active settings found, initializing extension');
         urlChangeTimeout = setTimeout(() => {
-          init();
+          if (!isBackNavigation) init();
         }, 500);
       } else {
         console.log('No active settings, skipping initialization');
@@ -1064,8 +1155,34 @@ function setupUrlMonitoring() {
   // Also listen for browser navigation events (back/forward button)
   window.addEventListener('popstate', () => {
     isBackNavigation = true;
-    console.log('[TabSelector] popstate fired — back navigation detected');
     handleUrlChange();
+
+    // After X.com finishes restoring its state, force the tab the user was on
+    if (isHomePage()) {
+      const savedIndex = parseInt(document.documentElement.getAttribute('data-x-tab') || '-1');
+
+      if (savedIndex !== -1) {
+        // Wait for X.com to finish its own state restoration, then override
+        setTimeout(() => {
+          const tablist = document.querySelector('[role="tablist"]');
+          if (!tablist || !isHomePage()) return;
+          const tabs = tablist.querySelectorAll('[role="tab"]');
+          const targetTab = tabs[savedIndex];
+          if (targetTab && targetTab.getAttribute('aria-selected') !== 'true') {
+            _followingEnforcing = true; // pause enforcement observer
+            selectTab(targetTab);
+            setTimeout(() => { _followingEnforcing = false; }, 1500);
+          }
+          isBackNavigation = false;
+          lastActiveTabIndex = -1;
+          document.documentElement.removeAttribute('data-x-tab');
+        }, 800);
+      } else {
+        isBackNavigation = false;
+      }
+    } else {
+      isBackNavigation = false;
+    }
   });
 
   // Listen for pushstate/replacestate (SPA forward navigation e.g. clicking a tweet)
@@ -1081,7 +1198,7 @@ function setupUrlMonitoring() {
         const activeIndex = Array.from(tabs).findIndex(t => t.getAttribute('aria-selected') === 'true');
         if (activeIndex !== -1) {
           lastActiveTabIndex = activeIndex;
-          console.log('[TabSelector] pushState: saved active tab index', lastActiveTabIndex, tabs[activeIndex].textContent.trim());
+          document.documentElement.setAttribute('data-x-tab', activeIndex);
         }
       }
     }
@@ -1101,6 +1218,7 @@ chrome.storage.sync.get({
   extensionEnabled: true,
   hideForYou: false,
   hideFollowing: false,
+  makeForYouDefault: false,
   makeListDefault: false,
   makeFollowingDefault: false,
   selectedList: ''
