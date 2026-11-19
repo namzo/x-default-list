@@ -44,8 +44,10 @@ const DEFAULT_SETTINGS = {
 };
 
 const STYLE_ID = 'x-tab-selector-css';
-// Class on <html> that hides the posts until the default tab is selected,
-// so the wrong timeline doesn't flash up first.
+// Class on <html> that hides the tab bar and posts until the default tab is
+// selected, so neither the wrong tab nor its posts flash up first. X only
+// remembers For you / Following (in IndexedDB), never a list, so with a list
+// default X always draws one of those first.
 const PENDING_CLASS = 'xdl-pending';
 // Never keep the posts hidden longer than this.
 const PENDING_MAX_MS = 2500;
@@ -156,7 +158,8 @@ function buildCss() {
   const tablist = '[data-testid="primaryColumn"] [role="tablist"]:has(> [role="presentation"] > div[role="tab"])';
   const nav = '[data-testid="primaryColumn"] nav:has(div[role="tab"])';
   const rules = [
-    `html.${PENDING_CLASS} [data-testid="primaryColumn"] section[role="region"] { visibility: hidden !important; }`
+    `html.${PENDING_CLASS} ${nav},
+     html.${PENDING_CLASS} [data-testid="primaryColumn"] section[role="region"] { visibility: hidden !important; }`
   ];
   const hidden = [];
   if (settings.hideForYou) hidden.push(`${tablist} > [role="presentation"]:nth-child(1)`);

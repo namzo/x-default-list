@@ -7,7 +7,7 @@ A Chrome extension that chooses which X Home tab opens by default (For you, Foll
 - **Default timeline**: For you, Following, or any list or topic you've pinned to your Home tabs
 - **Lists you haven't pinned**: choose one and opening X takes you straight to that list's page (the Home link still shows Home)
 - **Hide "For you"** and/or **Hide "Following"**
-- **No flash of the wrong timeline**: posts stay hidden for a moment (at most 2.5 seconds) until your default tab is selected
+- **No flash of the wrong timeline**: the tab bar and posts stay hidden for a moment (at most 2.5 seconds) until your default tab is selected, so you never see X's last-used tab first
 - **Respects your choice**: the default applies when you open X fresh (new tab, bookmark, typing x.com). After that, reloading, Back/Forward and the Home link keep whichever tab you're on, so the page doesn't jump
 - **Warns you if X changes its layout**: the popup says so when it couldn't find the Home tabs
 - **Remembers your pinned lists**, so you can choose one from the popup on any tab

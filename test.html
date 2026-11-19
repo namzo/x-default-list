@@ -374,6 +374,12 @@ if (!window.__test) {
       if (cell && location.pathname === '/home' && getComputedStyle(section).visibility !== 'hidden' && cell.dataset.timeline !== (sc.defaultTab || sc.expect) && !window.__userMoved) {
         flash = cell.dataset.timeline;
       }
+      // The tab bar mustn't show another tab selected first, either.
+      const nav = document.querySelector('[data-testid="primaryColumn"] nav');
+      const selectedTab = nav && nav.querySelector('div[role="tab"][aria-selected="true"]');
+      if (selectedTab && location.pathname === '/home' && getComputedStyle(nav).visibility !== 'hidden' && selectedTab.textContent !== (sc.defaultTab || sc.expect) && !window.__userMoved) {
+        flash = 'tab bar showing ' + selectedTab.textContent;
+      }
     };
     new MutationObserver(check).observe(document.body, { childList: true, subtree: true, attributes: true });
     const raf = () => { check(); requestAnimationFrame(raf); };
@@ -395,7 +401,7 @@ if (!window.__test) {
     if (clicks.some(c => c.startsWith('explore:'))) fail('clicked an Explore tab');
     if (menuOpened) fail('clicked an already-selected tab (opens X\'s menu)');
     if (sc.expectClicks !== undefined && clicks.length !== sc.expectClicks) fail(`expected ${sc.expectClicks} clicks, got ${clicks.length}`);
-    if (flash && sc.settings.extensionEnabled !== false && !sc.noTabBar) fail(`posts from "${flash}" were visible before the default was selected`);
+    if (flash && sc.settings.extensionEnabled !== false && !sc.noTabBar) fail(`"${flash}" was visible before the default was selected`);
     if (document.documentElement.classList.contains('xdl-pending')) fail('posts still hidden at the end');
 
     if (scenarioName === 'hide-both') {
