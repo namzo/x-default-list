@@ -51,13 +51,14 @@ The extension will work without custom icons, but if you want to add them:
 The extension:
 
 1. **Loads user settings**: Retrieves saved preferences from Chrome storage
-2. **Detects the tablist**: Looks for elements with `role="tablist"`
-3. **Applies visibility settings**: Hides tabs based on user preferences
-4. **Selects appropriate tab**: Chooses the first visible tab as the default
-5. **Handles user interactions**: Redirects clicks on hidden tabs to visible ones
-6. **Handles retries**: If the tablist isn't loaded yet, it retries up to 20 times
-7. **Observes changes**: Uses MutationObserver to handle dynamic content loading
-8. **Updates in real-time**: Responds to settings changes from the popup
+2. **Detects the Home tab bar**: The `role="tablist"` in the primary column whose tabs are `<div role="tab">` (other pages' tab bars use links, and the composer toolbar has no tabs)
+3. **Applies visibility settings**: Hides "For you" / "Following" with injected CSS
+4. **Selects the default tab**: Each time you open Home (page load or the Home link), it waits for the tab bar and pinned lists, clicks your default tab, then guards it for a few seconds in case X switches back
+5. **Respects you**: Stops as soon as you pick a tab yourself, and leaves Back/Forward alone (X restores the tab you were on)
+6. **Follows navigation**: Uses the Navigation API to notice X's in-app page changes
+7. **Updates in real-time**: Responds to settings changes from the popup
+
+To pin a list or topic so it appears as a tab, click the **+** to the right of the Home tabs and pin it from **Lists** or **Topics**.
 
 ## Files
 

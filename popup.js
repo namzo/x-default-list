@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 const lists = response.lists || [];
                 if (lists.length === 0) {
-                    selectedList.innerHTML = '<option value="">No pinned lists found</option>';
+                    selectedList.innerHTML = '<option value="">No pinned lists or topics found</option>';
                     selectedList.disabled = true;
                     return;
                 }
@@ -116,17 +116,9 @@ document.addEventListener('DOMContentLoaded', function() {
             selectedList: selectedList.value
         };
 
+        // The content script listens for storage changes and applies them itself.
         chrome.storage.sync.set(settings, function() {
             updateUIState(settings.extensionEnabled);
-
-            chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-                if (tabs[0] && tabs[0].url && (tabs[0].url.includes('x.com') || tabs[0].url.includes('twitter.com'))) {
-                    chrome.tabs.sendMessage(tabs[0].id, {
-                        action: 'updateSettings',
-                        settings: settings
-                    });
-                }
-            });
         });
     }
 

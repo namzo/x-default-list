@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "X.com Third Tab Selector",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Automatically selects the 3rd tab in the tablist on x.com/twitter.com",
   "permissions": [
     "activeTab",
