@@ -68,13 +68,25 @@ const LIST_PAGE_WATCH_MS = 6000;
 
 // Your default applies when you open X fresh (new tab, bookmark, typed
 // address), once. Reloading, Back/Forward and the Home link keep whichever
-// tab you're on, which X itself remembers. Switching tabs on those would
-// undo your own choice and make the page jump.
+// tab you're on. Within the page X keeps that itself, but after a reload X
+// only remembers For you / Following, never a list, so the extension keeps
+// the tab you were on in sessionStorage (per browser tab, survives reloads)
+// and puts it back.
 const openedFresh = (() => {
   const entry = performance.getEntriesByType('navigation')[0];
   return !entry || entry.type === 'navigate';
 })();
+const LAST_TAB_KEY = 'xdl-last-home-tab';
 let defaultUsed = false;
+let restoreUsed = false;
+
+function readLastTab() {
+  try { return window.sessionStorage.getItem(LAST_TAB_KEY); } catch (e) { return null; }
+}
+
+function writeLastTab(label) {
+  try { if (label) window.sessionStorage.setItem(LAST_TAB_KEY, label); } catch (e) { /* storage blocked */ }
+}
 
 let settings = { ...DEFAULT_SETTINGS };
 let session = null;
@@ -100,10 +112,6 @@ function isUnpinnedListDefault() {
 function hasTabDefault() {
   return settings.makeForYouDefault || settings.makeFollowingDefault ||
     (settings.makeListDefault && !isUnpinnedListDefault());
-}
-
-function hasActiveSettings() {
-  return settings.extensionEnabled && (settings.hideForYou || settings.hideFollowing || hasTabDefault());
 }
 
 // Same rule as the default tab, so Home is always one click away.
@@ -176,7 +184,7 @@ function buildCss() {
 }
 
 function applyCss() {
-  const css = hasActiveSettings() && isHomePage() ? buildCss() : '';
+  const css = settings.extensionEnabled && isHomePage() ? buildCss() : '';
   let style = document.getElementById(STYLE_ID);
   if (!css) {
     if (style) style.remove();
@@ -195,10 +203,16 @@ function setPending(on) {
 }
 
 // ---------------------------------------------------------------------------
-// Choosing the default tab
+// Choosing the tab
+//
+// session.mode:
+//   'default'  select your default (first Home visit after opening X fresh,
+//              or right after you change the setting)
+//   'restore'  after a reload, put back the tab you were on (restoreLabel)
+//   'hidden'   only move you off a tab you've hidden
 
-function pickDefaultTab(tabs) {
-  if (session.applyDefault) {
+function pickTargetTab(tabs) {
+  if (session.mode === 'default') {
     if (settings.makeListDefault && !isUnpinnedListDefault() && tabs.length > 2) {
       const pinned = tabs.slice(2);
       return pinned.find(t => tabLabel(t) === settings.selectedList) || pinned[0];
@@ -206,15 +220,22 @@ function pickDefaultTab(tabs) {
     if (settings.makeFollowingDefault && tabs[1] && !isHiddenIndex(1)) return tabs[1];
     if (settings.makeForYouDefault && tabs[0] && !isHiddenIndex(0)) return tabs[0];
   }
+  if (session.mode === 'restore') {
+    const index = tabs.findIndex(t => tabLabel(t) === session.restoreLabel);
+    if (index !== -1 && !isHiddenIndex(index)) return tabs[index];
+  }
   // Otherwise keep the tab you're on, unless it's one you've hidden.
   const current = tabs.findIndex(isSelected);
   if (current !== -1 && !isHiddenIndex(current)) return tabs[current];
   return tabs.find((t, i) => !isHiddenIndex(i)) || null;
 }
 
-function isWaitingForList(tabs) {
-  if (!session.applyDefault || !settings.makeListDefault || isUnpinnedListDefault()) return false;
+// Pinned tabs are drawn after For you / Following, so wait a little for the
+// one we want.
+function isWaitingForTab(tabs) {
   if (Date.now() - session.startedAt > LIST_WAIT_MS) return false;
+  if (session.mode === 'restore') return !tabs.some(t => tabLabel(t) === session.restoreLabel);
+  if (session.mode !== 'default' || !settings.makeListDefault || isUnpinnedListDefault()) return false;
   if (tabs.length <= 2) return true;
   return !!settings.selectedList && !tabs.slice(2).some(t => tabLabel(t) === settings.selectedList);
 }
@@ -228,20 +249,30 @@ function selectTab(tab) {
   console.log('[X Default Timeline] Selected tab:', tabLabel(tab));
 }
 
-// A "session" runs each time Home is shown. It waits for the tab bar, then
-// either selects your default (applyDefault: the first Home visit after
-// opening X fresh, or right after you change the setting) and guards it for a
-// short settle period, or just moves you off a tab you've hidden.
+// A "session" runs each time Home is shown. It waits for the tab bar, selects
+// the tab for its mode (see above), hiding the tab bar and posts until then,
+// and guards it for a short settle period.
 
 function startSession(forceDefault) {
   endSession();
-  if (!isHomePage() || !hasActiveSettings()) return;
-  const applyDefault = hasTabDefault() && (forceDefault || (openedFresh && !defaultUsed));
-  if (!applyDefault && !settings.hideForYou && !settings.hideFollowing) return;
-  if (applyDefault) defaultUsed = true;
+  if (!isHomePage() || !settings.extensionEnabled) return;
+  const firstVisit = !restoreUsed;
+  restoreUsed = true;
+
+  let mode = 'hidden';
+  let restoreLabel = null;
+  if (hasTabDefault() && (forceDefault || (openedFresh && !defaultUsed))) {
+    mode = 'default';
+    defaultUsed = true;
+  } else if (!openedFresh && firstVisit && (restoreLabel = readLastTab())) {
+    mode = 'restore';
+  } else if (!settings.hideForYou && !settings.hideFollowing) {
+    return;
+  }
 
   session = {
-    applyDefault,
+    mode,
+    restoreLabel,
     startedAt: Date.now(),
     appliedAt: 0,
     lastClickAt: 0,
@@ -249,10 +280,10 @@ function startSession(forceDefault) {
     observer: new MutationObserver(scheduleTick),
     timeout: setTimeout(onSessionTimeout, SESSION_TIMEOUT_MS),
     pendingTimeout: null,
-    // Re-check when the wait for a named list runs out, even if the page is idle.
-    listTimeout: applyDefault && settings.makeListDefault && !isUnpinnedListDefault() ? setTimeout(scheduleTick, LIST_WAIT_MS + 10) : null
+    // Re-check when the wait for a pinned tab runs out, even if the page is idle.
+    listTimeout: mode !== 'hidden' ? setTimeout(scheduleTick, LIST_WAIT_MS + 10) : null
   };
-  if (applyDefault) {
+  if (mode !== 'hidden') {
     setPending(true);
     session.pendingTimeout = setTimeout(() => setPending(false), PENDING_MAX_MS);
   }
@@ -302,18 +333,19 @@ function scheduleTick() {
 
 function tick() {
   if (!session) return;
-  if (!isHomePage() || !hasActiveSettings()) return endSession();
+  if (!isHomePage() || !settings.extensionEnabled) return endSession();
 
   const tabs = getTabs(getTimelineTablist());
   if (tabs.length < 2) return;
   // X draws For you and Following before your pinned tabs, so two tabs
   // doesn't mean "nothing pinned" yet; endSession saves the final answer.
   if (tabs.length > 2) savePinned(tabs);
-  if (isWaitingForList(tabs)) return;
+  if (isWaitingForTab(tabs)) return;
 
-  const target = pickDefaultTab(tabs);
+  const target = pickTargetTab(tabs);
   if (target && !isSelected(target)) selectTab(target);
   if (!target || isSelected(target)) setPending(false);
+  if (target && isSelected(target)) writeLastTab(tabLabel(target));
 
   if (!session.appliedAt) {
     session.appliedAt = Date.now();
@@ -323,11 +355,13 @@ function tick() {
   }
 }
 
-// Once the user picks a tab themselves, stop steering.
+// When you pick a Home tab yourself: remember it for reloads, and stop steering.
 function onUserTabInteraction(event) {
-  if (!session || !event.isTrusted) return;
+  if (!event.isTrusted || !isHomePage() || !settings.extensionEnabled) return;
   const tab = event.target.closest && event.target.closest('[role="tab"]');
-  if (tab && tab.closest('[role="tablist"]') === getTimelineTablist()) endSession();
+  if (!tab || tab.closest('[role="tablist"]') !== getTimelineTablist()) return;
+  if (event.type === 'click' || event.key === 'Enter' || event.key === ' ') writeLastTab(tabLabel(tab));
+  if (session) endSession();
 }
 document.addEventListener('click', onUserTabInteraction, true);
 document.addEventListener('keydown', onUserTabInteraction, true);

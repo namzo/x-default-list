@@ -107,6 +107,12 @@ const SCENARIOS = {
     settings: { makeListDefault: true, selectedList: 'News' },
     reload: true, xStartsOn: 'Following', expect: 'Following', expectClicks: 0, duration: 2500
   },
+  'reload-keeps-list': {
+    about: 'Reloading while on a list puts the list back (X itself falls back to Following)',
+    settings: { makeListDefault: true, selectedList: 'News' },
+    sessionStart: { 'xdl-last-home-tab': 'Craft' },
+    reload: true, xStartsOn: 'Following', expect: 'Craft', duration: 2500
+  },
   'reload-hidden': {
     about: 'Reloading still moves you off a tab you\'ve hidden',
     settings: { hideForYou: true, makeListDefault: true, selectedList: 'News' },
@@ -141,6 +147,17 @@ if (scenarioName) {
 
   // Catch page loads the content script starts (it opens unpinned lists with
   // location.replace) instead of letting the frame leave the fixture.
+  // Same-origin frames share sessionStorage, so give each scenario its own.
+  const sessionStore = Object.assign({}, sc.sessionStart);
+  Object.defineProperty(window, 'sessionStorage', {
+    configurable: true,
+    value: {
+      getItem: (k) => (k in sessionStore ? sessionStore[k] : null),
+      setItem: (k, v) => { sessionStore[k] = String(v); },
+      removeItem: (k) => { delete sessionStore[k]; }
+    }
+  });
+
   // Pretend this page load was a reload rather than opening X fresh.
   if (sc.reload) {
     const original = performance.getEntriesByType.bind(performance);
@@ -181,7 +198,7 @@ if (scenarioName) {
     },
     runtime: { onMessage: { addListener: fn => messageListeners.push(fn) } }
   };
-  window.__test = { sc, sync, local, messageListeners };
+  window.__test = { sc, sync, local, sessionStore, messageListeners };
 
   history.replaceState(null, '', (sc.startPath || '/home') + location.search);
 }
@@ -258,7 +275,7 @@ if (!window.__test) {
   });
 } else {
   // ----- Fake X Home page ----------------------------------------------------
-  const { sc, local, messageListeners } = window.__test;
+  const { sc, local, sessionStore, messageListeners } = window.__test;
   const BUILT_IN = ['For you', 'Following'];
   const PINNED = ['Craft', 'News'];
   let showing = sc.xStartsOn;
@@ -423,6 +440,7 @@ if (!window.__test) {
       let reply;
       messageListeners.forEach(fn => fn({ action: 'getLists' }, null, r => { reply = r; }));
       if (!reply || !reply.found || JSON.stringify(reply.lists) !== JSON.stringify(PINNED)) fail('getLists reply wrong: ' + JSON.stringify(reply)); else details.push('popup list lookup works');
+      if (sessionStore['xdl-last-home-tab'] !== 'News') fail('tab for reloads saved as ' + sessionStore['xdl-last-home-tab']); else details.push('remembered News for reloads');
     }
     if (sc.expectRedirect) {
       if (window.__redirects[0] === sc.expectRedirect) details.push('opened ' + sc.expectRedirect); else fail(`expected to open ${sc.expectRedirect}, got ${JSON.stringify(window.__redirects)}`);
