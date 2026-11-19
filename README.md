@@ -8,7 +8,7 @@ A Chrome extension that chooses which X Home tab opens by default (For you, Foll
 - **Lists you haven't pinned**: choose one and opening X takes you straight to that list's page (the Home link still shows Home)
 - **Hide "For you"** and/or **Hide "Following"**
 - **No flash of the wrong timeline**: posts stay hidden for a moment (at most 2.5 seconds) until your default tab is selected
-- **Respects you**: once you pick a tab yourself it stops steering, and Back/Forward keeps the tab you were on
+- **Respects your choice**: the default applies when you open X fresh (new tab, bookmark, typing x.com). After that, reloading, Back/Forward and the Home link keep whichever tab you're on, so the page doesn't jump
 - **Warns you if X changes its layout**: the popup says so when it couldn't find the Home tabs
 - **Remembers your pinned lists**, so you can choose one from the popup on any tab
 - Works on x.com/home (and twitter.com, which redirects there)
@@ -38,7 +38,7 @@ Settings save as you change them and apply straight away.
 
 1. **Finds the Home tab bar**: the `role="tablist"` in the main column whose tabs are `<div role="tab">` (Explore and profile tab bars use links, and the post composer toolbar has no tabs)
 2. **Hides tabs** with injected CSS keyed to the current markup
-3. **Selects the default tab** each time you open Home (page load or the Home link). It waits for the tab bar and your pinned lists, clicks the default, then guards it for 3 seconds in case X switches back
+3. **Selects the default tab** on the first visit to Home after you open X fresh, or straight after you change the setting. It waits for the tab bar and your pinned lists, clicks the default, then guards it for 3 seconds in case X switches back (stopping as soon as you pick a tab). On reloads, Back/Forward and the Home link it leaves X's own choice (the tab you were last on) alone, except to move you off a tab you've hidden
 4. **Follows navigation** with the Navigation API, since X is a single-page app
 5. **Learns your lists**: your Lists page (`/<username>/lists`) gives the names of your own lists, and each list's page (`/i/lists/<id>`) gives its ID. If your default is a list that isn't pinned, opening X fresh replaces Home with that list's page
 6. **Reports to the popup** through `chrome.storage.local`: whether it found the Home tabs, your pinned tabs, and the lists it has learned

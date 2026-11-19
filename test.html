@@ -97,6 +97,27 @@ const SCENARIOS = {
     localStart: { pinnedTimelines: ['Craft', 'News'] },
     xStartsOn: 'For you', expect: 'News', duration: 2500
   },
+  'home-link-again': {
+    about: 'After you switch to Following, the Home link keeps Following',
+    settings: { makeListDefault: true, selectedList: 'News' },
+    xStartsOn: 'For you', defaultTab: 'News', expect: 'Following', expectClicks: 1, duration: 7000
+  },
+  'reload': {
+    about: 'Reloading keeps the tab you were on (no switch, no jump)',
+    settings: { makeListDefault: true, selectedList: 'News' },
+    reload: true, xStartsOn: 'Following', expect: 'Following', expectClicks: 0, duration: 2500
+  },
+  'reload-hidden': {
+    about: 'Reloading still moves you off a tab you\'ve hidden',
+    settings: { hideForYou: true, makeListDefault: true, selectedList: 'News' },
+    // Only applies when X restores a hidden tab, so a brief flash is expected.
+    reload: true, xStartsOn: 'For you', expect: 'Following', allowFlash: true, duration: 2500
+  },
+  'setting-changed': {
+    about: 'Changing the default in the popup applies it straight away',
+    settings: { makeFollowingDefault: true },
+    reload: true, xStartsOn: 'Following', expect: 'News', allowFlash: true, duration: 3000
+  },
   'missing-tabs': {
     about: 'Tells the popup when X\'s Home tabs never appear',
     settings: { makeFollowingDefault: true },
@@ -120,6 +141,12 @@ if (scenarioName) {
 
   // Catch page loads the content script starts (it opens unpinned lists with
   // location.replace) instead of letting the frame leave the fixture.
+  // Pretend this page load was a reload rather than opening X fresh.
+  if (sc.reload) {
+    const original = performance.getEntriesByType.bind(performance);
+    performance.getEntriesByType = (type) => type === 'navigation' ? [{ type: 'reload' }] : original(type);
+  }
+
   window.__redirects = [];
   navigation.addEventListener('navigate', (event) => {
     if (event.destination.sameDocument) return;
@@ -442,8 +469,23 @@ if (!window.__test) {
     // you open Explore, then press Back.
     setTimeout(() => { window.__userMoved = true; selectTimeline('Craft'); }, 4000);
     setTimeout(() => { history.pushState(null, '', '/explore' + location.search); renderExplore(); }, 4500);
-    setTimeout(() => history.back(), 5200);
+    // navigation.back() only goes back in this frame; history.back() can step
+    // back in another scenario's frame, since frames share one history.
+    setTimeout(() => navigation.back(), 5200);
     window.addEventListener('popstate', () => { if (location.pathname === '/home') renderHome(true); });
+  }
+
+  if (scenarioName === 'home-link-again') {
+    // After the default has settled you switch to Following, open Explore,
+    // then use the Home link (not Back).
+    setTimeout(() => { window.__userMoved = true; selectTimeline('Following'); }, 4000);
+    setTimeout(() => { history.pushState(null, '', '/explore' + location.search); renderExplore(); }, 4500);
+    setTimeout(() => { history.pushState(null, '', '/home' + location.search); renderHome(true); }, 5300);
+  }
+
+  if (scenarioName === 'setting-changed') {
+    // You pick News in the popup while Home is open.
+    setTimeout(() => chrome.storage.sync.set({ makeFollowingDefault: false, makeListDefault: true, selectedList: 'News' }), 1200);
   }
 
   setTimeout(finish, sc.duration);

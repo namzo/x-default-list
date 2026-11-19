@@ -64,6 +64,16 @@ const MAX_KNOWN_LISTS = 100;
 // How long to watch a Lists page or list page for its content.
 const LIST_PAGE_WATCH_MS = 6000;
 
+// Your default applies when you open X fresh (new tab, bookmark, typed
+// address), once. Reloading, Back/Forward and the Home link keep whichever
+// tab you're on, which X itself remembers. Switching tabs on those would
+// undo your own choice and make the page jump.
+const openedFresh = (() => {
+  const entry = performance.getEntriesByType('navigation')[0];
+  return !entry || entry.type === 'navigate';
+})();
+let defaultUsed = false;
+
 let settings = { ...DEFAULT_SETTINGS };
 let session = null;
 let pinnedNames = []; // pinned tab names, from the last time Home was seen
@@ -94,12 +104,9 @@ function hasActiveSettings() {
   return settings.extensionEnabled && (settings.hideForYou || settings.hideFollowing || hasTabDefault());
 }
 
-// Only when you open X fresh (new tab, bookmark, typed address), never on
-// reload, Back/Forward or the Home link, so Home is always one click away.
+// Same rule as the default tab, so Home is always one click away.
 function shouldOpenUnpinnedList() {
-  if (!settings.extensionEnabled || !isUnpinnedListDefault() || !isHomePage()) return false;
-  const entry = performance.getEntriesByType('navigation')[0];
-  return !entry || entry.type === 'navigate';
+  return openedFresh && settings.extensionEnabled && isUnpinnedListDefault() && isHomePage();
 }
 
 function getTimelineTablist() {
@@ -188,20 +195,22 @@ function setPending(on) {
 // Choosing the default tab
 
 function pickDefaultTab(tabs) {
-  if (settings.makeListDefault && !isUnpinnedListDefault() && tabs.length > 2) {
-    const pinned = tabs.slice(2);
-    return pinned.find(t => tabLabel(t) === settings.selectedList) || pinned[0];
+  if (session.applyDefault) {
+    if (settings.makeListDefault && !isUnpinnedListDefault() && tabs.length > 2) {
+      const pinned = tabs.slice(2);
+      return pinned.find(t => tabLabel(t) === settings.selectedList) || pinned[0];
+    }
+    if (settings.makeFollowingDefault && tabs[1] && !isHiddenIndex(1)) return tabs[1];
+    if (settings.makeForYouDefault && tabs[0] && !isHiddenIndex(0)) return tabs[0];
   }
-  if (settings.makeFollowingDefault && tabs[1] && !isHiddenIndex(1)) return tabs[1];
-  if (settings.makeForYouDefault && tabs[0] && !isHiddenIndex(0)) return tabs[0];
-  // No usable default: just make sure a hidden tab isn't the one showing.
+  // Otherwise keep the tab you're on, unless it's one you've hidden.
   const current = tabs.findIndex(isSelected);
   if (current !== -1 && !isHiddenIndex(current)) return tabs[current];
   return tabs.find((t, i) => !isHiddenIndex(i)) || null;
 }
 
 function isWaitingForList(tabs) {
-  if (!settings.makeListDefault || isUnpinnedListDefault()) return false;
+  if (!session.applyDefault || !settings.makeListDefault || isUnpinnedListDefault()) return false;
   if (Date.now() - session.startedAt > LIST_WAIT_MS) return false;
   if (tabs.length <= 2) return true;
   return !!settings.selectedList && !tabs.slice(2).some(t => tabLabel(t) === settings.selectedList);
@@ -216,15 +225,20 @@ function selectTab(tab) {
   console.log('[X Default Timeline] Selected tab:', tabLabel(tab));
 }
 
-// A "session" runs each time the home page is opened (page load, or an
-// in-app navigation to Home that isn't Back/Forward). It waits for the tab
-// bar, selects the default tab, then guards it for a short settle period.
+// A "session" runs each time Home is shown. It waits for the tab bar, then
+// either selects your default (applyDefault: the first Home visit after
+// opening X fresh, or right after you change the setting) and guards it for a
+// short settle period, or just moves you off a tab you've hidden.
 
-function startSession() {
+function startSession(forceDefault) {
   endSession();
   if (!isHomePage() || !hasActiveSettings()) return;
+  const applyDefault = hasTabDefault() && (forceDefault || (openedFresh && !defaultUsed));
+  if (!applyDefault && !settings.hideForYou && !settings.hideFollowing) return;
+  if (applyDefault) defaultUsed = true;
 
   session = {
+    applyDefault,
     startedAt: Date.now(),
     appliedAt: 0,
     lastClickAt: 0,
@@ -233,9 +247,9 @@ function startSession() {
     timeout: setTimeout(onSessionTimeout, SESSION_TIMEOUT_MS),
     pendingTimeout: null,
     // Re-check when the wait for a named list runs out, even if the page is idle.
-    listTimeout: settings.makeListDefault && !isUnpinnedListDefault() ? setTimeout(scheduleTick, LIST_WAIT_MS + 10) : null
+    listTimeout: applyDefault && settings.makeListDefault && !isUnpinnedListDefault() ? setTimeout(scheduleTick, LIST_WAIT_MS + 10) : null
   };
-  if (hasTabDefault()) {
+  if (applyDefault) {
     setPending(true);
     session.pendingTimeout = setTimeout(() => setPending(false), PENDING_MAX_MS);
   }
@@ -412,10 +426,11 @@ if (window.navigation) {
 // ---------------------------------------------------------------------------
 // Settings
 
-function applySettings(newSettings) {
+// forceDefault: you've just changed the setting, so show it straight away.
+function applySettings(newSettings, forceDefault) {
   settings = { ...DEFAULT_SETTINGS, ...newSettings };
   applyCss();
-  startSession();
+  startSession(forceDefault);
   watchListPages();
 }
 
@@ -423,7 +438,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'sync') return;
   const next = { ...settings };
   for (const key of Object.keys(changes)) next[key] = changes[key].newValue;
-  applySettings(next);
+  applySettings(next, true);
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
