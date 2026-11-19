@@ -1,4 +1,4 @@
-// Popup script for X.com Tab Selector extension
+// Popup script for the X Default Timeline extension
 
 document.addEventListener('DOMContentLoaded', function() {
     const extensionEnabled = document.getElementById('extensionEnabled');
@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const listHint = document.getElementById('listHint');
     const selectedList = document.getElementById('selectedList');
     const defaultTimeline = document.getElementById('defaultTimeline');
+    const layoutWarning = document.getElementById('layoutWarning');
 
     // Load saved settings
     chrome.storage.sync.get({
@@ -19,7 +20,8 @@ document.addEventListener('DOMContentLoaded', function() {
         makeForYouDefault: false,
         makeListDefault: false,
         makeFollowingDefault: false,
-        selectedList: ''
+        selectedList: '',
+        selectedListId: ''
     }, function(items) {
         extensionEnabled.checked = items.extensionEnabled;
         hideForYou.checked = items.hideForYou;
@@ -29,7 +31,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (items.makeListDefault) {
             defaultTimeline.value = 'list';
             listHint.style.display = 'block';
-            fetchAndPopulateLists(items.selectedList);
+            fetchAndPopulateLists(items);
         } else if (items.makeFollowingDefault) {
             defaultTimeline.value = 'following';
         } else {
@@ -68,37 +70,92 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function fetchAndPopulateLists(currentValue) {
+    // The content script records whether it last found X's Home tabs.
+    chrome.storage.local.get({ layout: null }, function(items) {
+        const layout = items.layout;
+        if (!layout || layout.ok !== false) return;
+        const when = new Date(layout.checkedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+        layoutWarning.textContent = 'Couldn\'t find the Home tabs on X (' + when + '). X may have changed its layout, so the extension might not work until it\'s updated.';
+        layoutWarning.style.display = 'block';
+    });
+
+    function showListMessage(text) {
+        selectedList.disabled = true;
+        selectedList.innerHTML = '';
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = text;
+        selectedList.appendChild(opt);
+    }
+
+    function addOption(parent, value, text, selected) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = text;
+        if (selected) opt.selected = true;
+        parent.appendChild(opt);
+    }
+
+    // Option values: "tab:<name>" for a pinned list or topic (selected as a
+    // Home tab), "list:<id>" for a list that isn't pinned (opens its page).
+    function populateLists(pinned, unpinned, current) {
+        if (pinned.length === 0 && unpinned.length === 0) {
+            showListMessage('No lists found yet');
+            return;
+        }
+        selectedList.disabled = false;
+        selectedList.innerHTML = '';
+        addOption(selectedList, '', 'Select a list or topic', false);
+
+        if (pinned.length) {
+            const group = document.createElement('optgroup');
+            group.label = 'Pinned · opens as a Home tab';
+            pinned.forEach(function(name) {
+                addOption(group, 'tab:' + name, name, !current.selectedListId && name === current.selectedList);
+            });
+            selectedList.appendChild(group);
+        }
+        if (unpinned.length) {
+            const group = document.createElement('optgroup');
+            group.label = 'Not pinned · opens the list';
+            unpinned.forEach(function(list) {
+                addOption(group, 'list:' + list.id, list.name, list.id === current.selectedListId);
+            });
+            selectedList.appendChild(group);
+        }
+    }
+
+    // Pinned names come from an open X Home tab if there is one, otherwise
+    // from what the content script saved. Unpinned lists are the ones you've
+    // opened on X, limited to your own lists once your Lists page has been seen.
+    function fetchAndPopulateLists(current) {
         listHint.style.display = 'block';
         listSelectorWrapper.style.display = 'block';
 
-        chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-            if (!tabs[0] || !tabs[0].url) return;
-            if (!tabs[0].url.includes('x.com') && !tabs[0].url.includes('twitter.com')) {
-                selectedList.innerHTML = '<option value="">Open X.com home to see your lists</option>';
-                selectedList.disabled = true;
-                return;
+        chrome.storage.local.get({ pinnedTimelines: [], knownLists: {}, yourLists: [] }, function(saved) {
+            function show(pinned) {
+                const unpinned = Object.keys(saved.knownLists)
+                    .map(function(id) { return { id: id, name: saved.knownLists[id] }; })
+                    .filter(function(list) {
+                        return !pinned.includes(list.name) &&
+                            (saved.yourLists.length === 0 || saved.yourLists.includes(list.name));
+                    })
+                    .sort(function(a, b) { return a.name.localeCompare(b.name); });
+                populateLists(pinned, unpinned, current);
             }
-            chrome.tabs.sendMessage(tabs[0].id, { action: 'getLists' }, function(response) {
-                if (chrome.runtime.lastError || !response) {
-                    selectedList.innerHTML = '<option value="">Navigate to X.com home first</option>';
-                    selectedList.disabled = true;
+
+            chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+                const tab = tabs[0];
+                if (!tab || !tab.url || !/^https:\/\/([^/]+\.)?(x|twitter)\.com\//.test(tab.url)) {
+                    show(saved.pinnedTimelines);
                     return;
                 }
-                const lists = response.lists || [];
-                if (lists.length === 0) {
-                    selectedList.innerHTML = '<option value="">No pinned lists or topics found</option>';
-                    selectedList.disabled = true;
-                    return;
-                }
-                selectedList.disabled = false;
-                selectedList.innerHTML = '<option value="">Select a list</option>';
-                lists.forEach(function(name) {
-                    const opt = document.createElement('option');
-                    opt.value = name;
-                    opt.textContent = name;
-                    if (name === currentValue) opt.selected = true;
-                    selectedList.appendChild(opt);
+                chrome.tabs.sendMessage(tab.id, { action: 'getLists' }, function(response) {
+                    if (chrome.runtime.lastError || !response || !response.found) {
+                        show(saved.pinnedTimelines);
+                        return;
+                    }
+                    show(response.lists || []);
                 });
             });
         });
@@ -106,15 +163,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function saveAndApplySettings() {
         const val = defaultTimeline.value;
+        const choice = selectedList.value;
+        const chosenOption = selectedList.selectedOptions[0];
         const settings = {
             extensionEnabled: extensionEnabled.checked,
             hideForYou: hideForYou.checked,
             hideFollowing: hideFollowing.checked,
             makeForYouDefault: val === 'forYou',
             makeListDefault: val === 'list',
-            makeFollowingDefault: val === 'following',
-            selectedList: selectedList.value
+            makeFollowingDefault: val === 'following'
         };
+        // Only touch the chosen list once the dropdown has loaded.
+        if (!selectedList.disabled && choice.startsWith('tab:')) {
+            settings.selectedList = choice.slice(4);
+            settings.selectedListId = '';
+        } else if (!selectedList.disabled && choice.startsWith('list:')) {
+            settings.selectedList = chosenOption.textContent;
+            settings.selectedListId = choice.slice(5);
+        }
 
         // The content script listens for storage changes and applies them itself.
         chrome.storage.sync.set(settings, function() {
@@ -125,8 +191,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Select change handler
     defaultTimeline.addEventListener('change', function() {
         if (this.value === 'list') {
-            chrome.storage.sync.get({ selectedList: '' }, function(items) {
-                fetchAndPopulateLists(items.selectedList);
+            chrome.storage.sync.get({ selectedList: '', selectedListId: '' }, function(items) {
+                fetchAndPopulateLists(items);
             });
         } else {
             listHint.style.display = 'none';

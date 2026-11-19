@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "X.com Third Tab Selector",
-  "version": "1.1",
-  "description": "Automatically selects the 3rd tab in the tablist on x.com/twitter.com",
+  "name": "X Default Timeline",
+  "version": "1.2",
+  "description": "Choose which X Home tab opens by default (For you, Following or a pinned list) and hide the tabs you don't use.",
   "permissions": [
     "activeTab",
     "storage"
@@ -13,16 +13,23 @@
         "*://*.x.com/*",
         "*://*.twitter.com/*"
       ],
-      "js": ["content.js"],
-      "run_at": "document_end"
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "X.com Tab Selector"
+    "default_title": "X Default Timeline",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png"
+    }
   },
   "icons": {
     "16": "icon16.png",
+    "32": "icon32.png",
     "48": "icon48.png",
     "128": "icon128.png"
   }

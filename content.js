@@ -1,22 +1,35 @@
 // X Default Timeline — content script.
 //
-// Runs in Chrome's isolated world, so it can only see and touch the DOM: it
-// cannot patch X's own JavaScript (React internals, history.pushState, etc.).
-// Everything here works through DOM selectors, CSS, clicks and DOM/Navigation
-// events, which are shared between worlds.
+// Runs in Chrome's isolated world from document_start, so it can only see and
+// touch the DOM: it cannot patch X's own JavaScript (React internals,
+// history.pushState, etc.). Everything here works through DOM selectors, CSS,
+// clicks and DOM/Navigation events, which are shared between worlds.
 //
 // Current X home layout (checked 2026-11-19):
-//   [data-testid="primaryColumn"] nav
-//     [data-testid="ScrollSnap-prevButtonWrapper"]
-//     [role="tablist"][data-testid="ScrollSnap-List"]
-//       [role="presentation"] > [role="tab"]  "For you"
-//       [role="presentation"] > [role="tab"]  "Following"
-//       [role="presentation"] > [role="tab"]  pinned lists / topics…
-//     [data-testid="ScrollSnap-nextButtonWrapper"]
+//   [data-testid="primaryColumn"]
+//     nav
+//       [data-testid="ScrollSnap-prevButtonWrapper"]
+//       [role="tablist"][data-testid="ScrollSnap-List"]
+//         [role="presentation"] > div[role="tab"]  "For you"
+//         [role="presentation"] > div[role="tab"]  "Following"
+//         [role="presentation"] > div[role="tab"]  pinned lists / topics…
+//       [data-testid="ScrollSnap-nextButtonWrapper"]
+//     section[role="region"]  the posts
+// Lists you haven't pinned aren't on Home at all. The extension learns them
+// from two pages (checked 2026-11-19):
+//   /<username>/lists  rows are [data-testid="listCell"]; your own lists have a
+//                      [data-testid="list-icon-button"] (pin), suggestions don't.
+//                      Rows carry no list ID.
+//   /i/lists/<id>      the list's own page; its name is the first <h2>.
+// If your default is an unpinned list, opening X fresh goes to its page instead.
+//
 // Home's tabs are <div role="tab">. Other pages' tab bars (Explore, profiles)
 // use <a role="tab" href>, and the post composer toolbar is a role="tablist"
 // with no tabs at all. While X swaps pages, the old page's tab bar can still
 // be in the DOM, so we only ever act on a tab bar of <div> tabs.
+//
+// test.html loads this file with a stand-in for the chrome.* APIs and a copy
+// of the markup above; open it to check changes without an X account.
 
 const DEFAULT_SETTINGS = {
   extensionEnabled: true,
@@ -25,22 +38,36 @@ const DEFAULT_SETTINGS = {
   makeForYouDefault: false,
   makeListDefault: false,
   makeFollowingDefault: false,
-  selectedList: ''
+  selectedList: '',
+  // Set only when the chosen list isn't pinned: its ID, for /i/lists/<id>.
+  selectedListId: ''
 };
 
 const STYLE_ID = 'x-tab-selector-css';
+// Class on <html> that hides the posts until the default tab is selected,
+// so the wrong timeline doesn't flash up first.
+const PENDING_CLASS = 'xdl-pending';
+// Never keep the posts hidden longer than this.
+const PENDING_MAX_MS = 2500;
 // How long to wait for a named pinned list to appear before falling back.
 const LIST_WAIT_MS = 8000;
 // After choosing the default, keep correcting X if it switches tabs on its own.
 const SETTLE_MS = 3000;
-// Give up if the tab bar never shows up.
+// Give up if the tab bar never shows up (and tell the popup).
 const SESSION_TIMEOUT_MS = 15000;
 // Don't click again while X is still applying the previous click
 // (clicking an already-selected tab opens X's timeline menu).
 const CLICK_COOLDOWN_MS = 700;
 
+// Remember at most this many lists you've opened.
+const MAX_KNOWN_LISTS = 100;
+// How long to watch a Lists page or list page for its content.
+const LIST_PAGE_WATCH_MS = 6000;
+
 let settings = { ...DEFAULT_SETTINGS };
 let session = null;
+let pinnedNames = []; // pinned tab names, from the last time Home was seen
+let savedPinned = null; // JSON of the pinned tab names last saved
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,11 +77,29 @@ function isHomePage() {
   return path === '/home' || path === '/';
 }
 
+// The default is a list that isn't pinned, so it opens on its own page
+// rather than as a Home tab. If you've since pinned it, use the tab.
+function isUnpinnedListDefault() {
+  return settings.makeListDefault && /^\d+$/.test(settings.selectedListId) &&
+    !pinnedNames.includes(settings.selectedList);
+}
+
+// The default is one of the Home tabs.
+function hasTabDefault() {
+  return settings.makeForYouDefault || settings.makeFollowingDefault ||
+    (settings.makeListDefault && !isUnpinnedListDefault());
+}
+
 function hasActiveSettings() {
-  return settings.extensionEnabled && (
-    settings.hideForYou || settings.hideFollowing ||
-    settings.makeForYouDefault || settings.makeListDefault || settings.makeFollowingDefault
-  );
+  return settings.extensionEnabled && (settings.hideForYou || settings.hideFollowing || hasTabDefault());
+}
+
+// Only when you open X fresh (new tab, bookmark, typed address), never on
+// reload, Back/Forward or the Home link, so Home is always one click away.
+function shouldOpenUnpinnedList() {
+  if (!settings.extensionEnabled || !isUnpinnedListDefault() || !isHomePage()) return false;
+  const entry = performance.getEntriesByType('navigation')[0];
+  return !entry || entry.type === 'navigate';
 }
 
 function getTimelineTablist() {
@@ -82,25 +127,46 @@ function isHiddenIndex(index) {
 }
 
 // ---------------------------------------------------------------------------
-// Hiding tabs (pure CSS, so it applies as soon as X renders the tab bar)
+// Status for the popup (chrome.storage.local, per device)
+
+function savePinned(tabs) {
+  const pinned = tabs.slice(2).map(tabLabel).filter(Boolean);
+  const json = JSON.stringify(pinned);
+  if (json === savedPinned) return;
+  savedPinned = json;
+  pinnedNames = pinned;
+  chrome.storage.local.set({ pinnedTimelines: pinned });
+}
+
+function saveLayoutStatus(ok) {
+  chrome.storage.local.set({ layout: { ok, checkedAt: Date.now() } });
+}
+
+// ---------------------------------------------------------------------------
+// CSS: hidden tabs, and hiding the posts while the default is being chosen
 
 function buildCss() {
   const tablist = '[data-testid="primaryColumn"] [role="tablist"]:has(> [role="presentation"] > div[role="tab"])';
   const nav = '[data-testid="primaryColumn"] nav:has(div[role="tab"])';
+  const rules = [
+    `html.${PENDING_CLASS} [data-testid="primaryColumn"] section[role="region"] { visibility: hidden !important; }`
+  ];
   const hidden = [];
   if (settings.hideForYou) hidden.push(`${tablist} > [role="presentation"]:nth-child(1)`);
   if (settings.hideFollowing) hidden.push(`${tablist} > [role="presentation"]:nth-child(2)`);
-  if (!hidden.length) return '';
-  // The scroll arrows misbehave once tabs are hidden, so hide them too.
-  hidden.push(
-    `${nav} [data-testid="ScrollSnap-prevButtonWrapper"]`,
-    `${nav} [data-testid="ScrollSnap-nextButtonWrapper"]`
-  );
-  return `${hidden.join(',\n')} { display: none !important; }`;
+  if (hidden.length) {
+    // The scroll arrows misbehave once tabs are hidden, so hide them too.
+    hidden.push(
+      `${nav} [data-testid="ScrollSnap-prevButtonWrapper"]`,
+      `${nav} [data-testid="ScrollSnap-nextButtonWrapper"]`
+    );
+    rules.push(`${hidden.join(',\n')} { display: none !important; }`);
+  }
+  return rules.join('\n');
 }
 
 function applyCss() {
-  const css = settings.extensionEnabled && isHomePage() ? buildCss() : '';
+  const css = hasActiveSettings() && isHomePage() ? buildCss() : '';
   let style = document.getElementById(STYLE_ID);
   if (!css) {
     if (style) style.remove();
@@ -114,11 +180,15 @@ function applyCss() {
   if (style.textContent !== css) style.textContent = css;
 }
 
+function setPending(on) {
+  document.documentElement.classList.toggle(PENDING_CLASS, on);
+}
+
 // ---------------------------------------------------------------------------
 // Choosing the default tab
 
 function pickDefaultTab(tabs) {
-  if (settings.makeListDefault && tabs.length > 2) {
+  if (settings.makeListDefault && !isUnpinnedListDefault() && tabs.length > 2) {
     const pinned = tabs.slice(2);
     return pinned.find(t => tabLabel(t) === settings.selectedList) || pinned[0];
   }
@@ -131,7 +201,7 @@ function pickDefaultTab(tabs) {
 }
 
 function isWaitingForList(tabs) {
-  if (!settings.makeListDefault) return false;
+  if (!settings.makeListDefault || isUnpinnedListDefault()) return false;
   if (Date.now() - session.startedAt > LIST_WAIT_MS) return false;
   if (tabs.length <= 2) return true;
   return !!settings.selectedList && !tabs.slice(2).some(t => tabLabel(t) === settings.selectedList);
@@ -160,9 +230,17 @@ function startSession() {
     lastClickAt: 0,
     scheduled: false,
     observer: new MutationObserver(scheduleTick),
-    timeout: setTimeout(endSession, SESSION_TIMEOUT_MS)
+    timeout: setTimeout(onSessionTimeout, SESSION_TIMEOUT_MS),
+    pendingTimeout: null,
+    // Re-check when the wait for a named list runs out, even if the page is idle.
+    listTimeout: settings.makeListDefault && !isUnpinnedListDefault() ? setTimeout(scheduleTick, LIST_WAIT_MS + 10) : null
   };
-  session.observer.observe(document.body, {
+  if (hasTabDefault()) {
+    setPending(true);
+    session.pendingTimeout = setTimeout(() => setPending(false), PENDING_MAX_MS);
+  }
+  // At document_start there is no <body> yet, so watch the whole document.
+  session.observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -172,10 +250,27 @@ function startSession() {
 }
 
 function endSession() {
+  setPending(false);
   if (!session) return;
+  if (session.appliedAt && isHomePage()) {
+    const tabs = getTabs(getTimelineTablist());
+    if (tabs.length > 2 || (tabs.length === 2 && Date.now() - session.startedAt > SETTLE_MS)) savePinned(tabs);
+  }
   session.observer.disconnect();
   clearTimeout(session.timeout);
+  clearTimeout(session.pendingTimeout);
+  clearTimeout(session.listTimeout);
   session = null;
+}
+
+function onSessionTimeout() {
+  // The tab bar never appeared. Only blame X's layout if the signed-in app
+  // (which has a primary column) actually loaded.
+  if (session && !session.appliedAt && document.querySelector('[data-testid="primaryColumn"]')) {
+    saveLayoutStatus(false);
+    console.warn('[X Default Timeline] Could not find the Home tabs. X may have changed its layout.');
+  }
+  endSession();
 }
 
 function scheduleTick() {
@@ -193,13 +288,19 @@ function tick() {
   if (!isHomePage() || !hasActiveSettings()) return endSession();
 
   const tabs = getTabs(getTimelineTablist());
-  if (tabs.length < 2 || isWaitingForList(tabs)) return;
+  if (tabs.length < 2) return;
+  // X draws For you and Following before your pinned tabs, so two tabs
+  // doesn't mean "nothing pinned" yet; endSession saves the final answer.
+  if (tabs.length > 2) savePinned(tabs);
+  if (isWaitingForList(tabs)) return;
 
   const target = pickDefaultTab(tabs);
   if (target && !isSelected(target)) selectTab(target);
+  if (!target || isSelected(target)) setPending(false);
 
   if (!session.appliedAt) {
     session.appliedAt = Date.now();
+    saveLayoutStatus(true);
     clearTimeout(session.timeout);
     session.timeout = setTimeout(endSession, SETTLE_MS);
   }
@@ -215,6 +316,73 @@ document.addEventListener('click', onUserTabInteraction, true);
 document.addEventListener('keydown', onUserTabInteraction, true);
 
 // ---------------------------------------------------------------------------
+// Learning your lists, so the popup can offer ones that aren't pinned
+
+const LIST_PAGE = /^\/i\/lists\/(\d+)$/;
+const LISTS_INDEX = /^\/[A-Za-z0-9_]{1,15}\/lists$/;
+let pageWatch = null;
+
+function stopWatchingListPage() {
+  if (!pageWatch) return;
+  pageWatch.observer.disconnect();
+  clearTimeout(pageWatch.debounce);
+  clearTimeout(pageWatch.timeout);
+  pageWatch = null;
+}
+
+function watchListPages() {
+  stopWatchingListPage();
+  if (!settings.extensionEnabled) return;
+  const path = window.location.pathname;
+  const listMatch = path.match(LIST_PAGE);
+  if (!listMatch && !LISTS_INDEX.test(path)) return;
+
+  const yourLists = new Set(); // collected over this visit (rows load lazily)
+  const check = () => {
+    if (window.location.pathname !== path) return stopWatchingListPage();
+    if (listMatch) recordListPage(listMatch[1]); else recordYourLists(yourLists);
+  };
+  // Re-check once the page settles, so a heading left over from the
+  // previous page is replaced by the real one.
+  const watch = {
+    observer: new MutationObserver(() => {
+      clearTimeout(watch.debounce);
+      watch.debounce = setTimeout(check, 300);
+    }),
+    debounce: null,
+    timeout: setTimeout(() => { check(); stopWatchingListPage(); }, LIST_PAGE_WATCH_MS)
+  };
+  pageWatch = watch;
+  watch.observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  check();
+}
+
+function recordListPage(id) {
+  const heading = document.querySelector('[data-testid="primaryColumn"] h2');
+  const name = heading && heading.textContent.trim();
+  if (!name) return;
+  chrome.storage.local.get({ knownLists: {} }, (items) => {
+    const known = items.knownLists || {};
+    if (known[id] === name) return;
+    delete known[id]; // re-insert so the most recent is last
+    known[id] = name;
+    const ids = Object.keys(known);
+    while (ids.length > MAX_KNOWN_LISTS) delete known[ids.shift()];
+    chrome.storage.local.set({ knownLists: known });
+  });
+}
+
+function recordYourLists(collected) {
+  const before = collected.size;
+  for (const cell of document.querySelectorAll('[data-testid="primaryColumn"] [data-testid="listCell"]')) {
+    if (!cell.querySelector('[data-testid="list-icon-button"]')) continue; // a suggestion
+    const name = cell.innerText.split('\n')[0].trim();
+    if (name) collected.add(name);
+  }
+  if (collected.size !== before) chrome.storage.local.set({ yourLists: Array.from(collected) });
+}
+
+// ---------------------------------------------------------------------------
 // Navigation (X is a single-page app)
 
 let lastPath = window.location.pathname;
@@ -224,6 +392,7 @@ function onNavigated(navigationType) {
   if (path === lastPath) return;
   lastPath = path;
 
+  watchListPages();
   applyCss();
   if (!isHomePage()) return endSession();
   // On Back/Forward X restores the tab you were on; leave it alone.
@@ -247,6 +416,7 @@ function applySettings(newSettings) {
   settings = { ...DEFAULT_SETTINGS, ...newSettings };
   applyCss();
   startSession();
+  watchListPages();
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -258,9 +428,23 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getLists') {
-    const lists = getTabs(getTimelineTablist()).slice(2).map(tabLabel).filter(Boolean);
-    sendResponse({ lists });
+    const tabs = getTabs(getTimelineTablist());
+    if (tabs.length >= 2) savePinned(tabs);
+    sendResponse({ found: tabs.length >= 2, lists: tabs.slice(2).map(tabLabel).filter(Boolean) });
   }
 });
 
-chrome.storage.sync.get(DEFAULT_SETTINGS, applySettings);
+chrome.storage.local.get({ pinnedTimelines: [] }, (local) => {
+  if (Array.isArray(local.pinnedTimelines)) {
+    pinnedNames = local.pinnedTimelines;
+    savedPinned = JSON.stringify(pinnedNames);
+  }
+  chrome.storage.sync.get(DEFAULT_SETTINGS, (items) => {
+    settings = { ...DEFAULT_SETTINGS, ...items };
+    if (shouldOpenUnpinnedList()) {
+      window.location.replace('/i/lists/' + settings.selectedListId);
+      return;
+    }
+    applySettings(items);
+  });
+});

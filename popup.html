@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>X.com Tab Selector</title>
+    <title>X Default Timeline</title>
     <style>
         body {
             width: 300px;
@@ -146,61 +146,130 @@
             flex: 1;
         }
 
-        /* Default timeline select */
-        #defaultTimeline {
-            padding: 3px 6px;
-            border-radius: 6px;
-            border: 1px solid #ccd6dd;
-            font-size: 13px;
-            background: #fff;
-            color: #14171a;
-            cursor: pointer;
-            flex-shrink: 0;
+        /* Dropdowns: X-style field with a small label above the value */
+        :root {
+            --field-text: #0f1419;
+            --field-muted: #536471;
+            --field-border: #cfd9de;
+            --field-accent: #1d9bf0;
+            --field-option-bg: #ffffff;
         }
 
         @media (prefers-color-scheme: dark) {
-            #defaultTimeline {
-                background: #1a1a1a;
-                color: #ffffff;
-                border-color: #444;
+            :root {
+                --field-text: #e7e9ea;
+                --field-muted: #71767b;
+                --field-border: #333639;
+                --field-option-bg: #000000;
             }
         }
 
+        .field {
+            position: relative;
+            display: block;
+            margin-bottom: 12px;
+            border: 1px solid var(--field-border);
+            border-radius: 6px;
+            color: var(--field-text);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .field:hover {
+            border-color: var(--field-muted);
+        }
+
+        .field:focus-within {
+            border-color: var(--field-accent);
+            box-shadow: 0 0 0 1px var(--field-accent);
+        }
+
+        .field-label {
+            position: absolute;
+            top: 7px;
+            left: 10px;
+            font-size: 12px;
+            color: var(--field-muted);
+            pointer-events: none;
+        }
+
+        .field:focus-within .field-label {
+            color: var(--field-accent);
+        }
+
+        /* Chevron */
+        .field::after {
+            content: '';
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            width: 6px;
+            height: 6px;
+            border-right: 2px solid var(--field-muted);
+            border-bottom: 2px solid var(--field-muted);
+            transform: translateY(-75%) rotate(45deg);
+            pointer-events: none;
+        }
+
+        .field:focus-within::after {
+            border-color: var(--field-accent);
+        }
+
+        .field select {
+            -webkit-appearance: none;
+            appearance: none;
+            display: block;
+            width: 100%;
+            margin: 0;
+            padding: 25px 36px 8px 10px;
+            border: 0;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            font-size: 15px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .field select:disabled {
+            color: var(--field-muted);
+            cursor: default;
+        }
+
+        .field option {
+            color: var(--field-text);
+            background: var(--field-option-bg);
+        }
+
         .option-hint {
-            font-size: 11px;
-            color: #657786;
-            margin-top: 0;
-            margin-bottom: 10px;
+            font-size: 12px;
+            color: var(--field-muted);
+            margin: -4px 0 12px;
             line-height: 1.4;
         }
 
         #listSelectorWrapper {
-            margin-top: -4px;
-            margin-bottom: 12px;
             display: none;
         }
 
-        #selectedList {
-            width: 100%;
-            padding: 5px 8px;
+        .layout-warning {
+            display: none;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #8a5a00;
+            background: #fff4d6;
+            border: 1px solid #f0d58a;
             border-radius: 6px;
-            border: 1px solid #ccd6dd;
-            font-size: 13px;
-            background: #fff;
-            color: #14171a;
-            cursor: pointer;
+            padding: 8px 10px;
+            margin-bottom: 12px;
         }
 
         @media (prefers-color-scheme: dark) {
-            .option-hint {
-                color: #888888;
+            .layout-warning {
+                color: #ffd27a;
+                background: #2a2210;
+                border-color: #5c4a1c;
             }
 
-            #selectedList {
-                background: #1a1a1a;
-                color: #ffffff;
-                border-color: #444;
-            }
         }
     </style>
 </head>
@@ -215,25 +284,29 @@
     <div id="disabledState" class="disabled-message">
         <div class="icon">🔌</div>
         <div>Extension is currently disabled</div>
-        <div style="font-size: 12px; margin-top: 8px;">Enable the extension to customize your Twitter timeline tabs</div>
+        <div style="font-size: 12px; margin-top: 8px;">Enable the extension to customize your X Home tabs</div>
     </div>
 
     <!-- Enabled State Content -->
     <div id="enabledState" class="content-enabled">
-        <div class="option">
-            <label for="defaultTimeline">Default timeline</label>
+        <div id="layoutWarning" class="layout-warning" role="status"></div>
+        <label class="field">
+            <span class="field-label">Default timeline</span>
             <select id="defaultTimeline">
                 <option value="forYou">For you</option>
                 <option value="following">Following</option>
-                <option value="list">My lists</option>
+                <option value="list">A list or topic</option>
             </select>
-        </div>
-        <p id="listHint" class="option-hint" style="display: none;">To use a list or topic, first pin it: on your Home timeline, click the <strong>+</strong> to the right of the tabs, then pin it from <strong>Lists</strong> or <strong>Topics</strong>.</p>
+        </label>
         <div id="listSelectorWrapper">
-            <select id="selectedList">
-                <option value="">Select a list</option>
-            </select>
+            <label class="field">
+                <span class="field-label">List or topic</span>
+                <select id="selectedList">
+                    <option value="">Select a list or topic</option>
+                </select>
+            </label>
         </div>
+        <p id="listHint" class="option-hint" style="display: none;">Pinned lists and topics open as a Home tab. A list you haven't pinned opens on its own page when you open X; to add one here, open it once on X. To pin, click the <strong>+</strong> next to your Home tabs.</p>
 
         <!-- Divider -->
         <div class="divider" style="height: 1px; background-color: #e1e8ed; margin: 14px 0;"></div>

@@ -1,69 +1,453 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>X.com Tab Test</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
+<meta charset="UTF-8">
+<title>X Default Timeline tests</title>
+<!--
+  Offline tests for content.js.
+
+  Serve the repo root and open /test.html, for example:
+    python3 -m http.server 8765   →   http://localhost:8765/test.html
+
+  Each scenario runs in its own frame. The frame fakes X's Home markup
+  (copied from x.com on 2026-11-19, see the comment at the top of content.js),
+  swaps in a stand-in for the chrome.* APIs, loads the real content.js before
+  <body> exists (like document_start) and checks what it did.
+
+  Not covered here: real user clicks (isTrusted), which need a real browser
+  session on x.com.
+-->
+<script>
+'use strict';
+
+const SCENARIOS = {
+  'list-default': {
+    about: 'Opens on the pinned list chosen as default',
+    settings: { makeListDefault: true, selectedList: 'News' },
+    xStartsOn: 'For you', expect: 'News', duration: 2500
+  },
+  'following-default': {
+    about: 'Opens on Following when that is the default',
+    settings: { makeFollowingDefault: true },
+    xStartsOn: 'For you', expect: 'Following', duration: 2000
+  },
+  'for-you-default': {
+    about: 'Switches back to For you when X restored Following',
+    settings: { makeForYouDefault: true },
+    xStartsOn: 'Following', expect: 'For you', duration: 2000
+  },
+  'already-default': {
+    about: 'Does not click when the default is already showing',
+    settings: { makeFollowingDefault: true },
+    xStartsOn: 'Following', expect: 'Following', expectClicks: 0, duration: 2000
+  },
+  'hide-both': {
+    about: 'Hides For you, Following and the tab arrows, but not the composer arrows',
+    settings: { hideForYou: true, hideFollowing: true, makeListDefault: true, selectedList: 'Craft' },
+    xStartsOn: 'For you', expect: 'Craft', duration: 2500
+  },
+  'missing-list': {
+    about: 'Falls back to the first pinned tab if the chosen list is gone',
+    settings: { makeListDefault: true, selectedList: 'Renamed list' },
+    // It waits up to 8 s for the list, but only hides posts for 2.5 s.
+    allowFlash: true,
+    xStartsOn: 'For you', expect: 'Craft', duration: 9500
+  },
+  'home-from-explore': {
+    about: 'Home link from Explore selects the default without touching Explore\'s tabs',
+    settings: { makeListDefault: true, selectedList: 'News' },
+    xStartsOn: 'Craft', startPath: '/explore', expect: 'News', expectPath: '/home', duration: 3500
+  },
+  'back-navigation': {
+    about: 'Back to Home keeps the tab you were on',
+    settings: { makeListDefault: true, selectedList: 'News' },
+    // News is the default on arrival; Craft is where you are when you come back.
+    xStartsOn: 'For you', defaultTab: 'News', expect: 'Craft', duration: 7000
+  },
+  'disabled': {
+    about: 'Does nothing when the extension is switched off',
+    settings: { extensionEnabled: false, hideForYou: true, makeFollowingDefault: true },
+    xStartsOn: 'For you', expect: 'For you', expectClicks: 0, duration: 1500
+  },
+  'lists-page': {
+    about: 'Learns your list names from your Lists page, skipping suggestions',
+    settings: { makeFollowingDefault: true },
+    startPath: '/namzo/lists', page: 'lists', duration: 1500
+  },
+  'list-page': {
+    about: 'Learns a list\'s ID and name when you open it',
+    settings: { makeFollowingDefault: true },
+    startPath: '/i/lists/123', page: 'list', duration: 1500
+  },
+  'unpinned-list': {
+    about: 'Opening X fresh goes to the default list\'s page when it isn\'t pinned',
+    settings: { makeListDefault: true, selectedList: 'sample', selectedListId: '123' },
+    localStart: { pinnedTimelines: ['Craft', 'News'] },
+    xStartsOn: 'Craft', expectRedirect: '/i/lists/123', duration: 1500
+  },
+  'unpinned-home-link': {
+    about: 'The Home link still shows Home when the default list isn\'t pinned',
+    settings: { makeListDefault: true, selectedList: 'sample', selectedListId: '123' },
+    localStart: { pinnedTimelines: ['Craft', 'News'] },
+    xStartsOn: 'Craft', startPath: '/explore', expect: 'Craft', expectPath: '/home', expectClicks: 0, duration: 3000
+  },
+  'now-pinned': {
+    about: 'Uses the Home tab once the chosen list has been pinned',
+    settings: { makeListDefault: true, selectedList: 'News', selectedListId: '123' },
+    localStart: { pinnedTimelines: ['Craft', 'News'] },
+    xStartsOn: 'For you', expect: 'News', duration: 2500
+  },
+  'missing-tabs': {
+    about: 'Tells the popup when X\'s Home tabs never appear',
+    settings: { makeFollowingDefault: true },
+    noTabBar: true, duration: 16000
+  },
+  'logged-out': {
+    about: 'Doesn\'t warn on the signed-out landing page',
+    settings: { makeFollowingDefault: true },
+    loggedOut: true, duration: 16000
+  }
+};
+
+const params = new URLSearchParams(location.search);
+const scenarioName = params.get('scenario');
+
+if (scenarioName) {
+  // ----- Inside a scenario frame -------------------------------------------
+  const sc = SCENARIOS[scenarioName];
+  const sync = Object.assign({}, sc.settings);
+  const local = Object.assign({}, sc.localStart);
+
+  // Catch page loads the content script starts (it opens unpinned lists with
+  // location.replace) instead of letting the frame leave the fixture.
+  window.__redirects = [];
+  navigation.addEventListener('navigate', (event) => {
+    if (event.destination.sameDocument) return;
+    window.__redirects.push(new URL(event.destination.url).pathname);
+    event.preventDefault();
+  });
+  const changeListeners = [];
+  const messageListeners = [];
+
+  function getFrom(store, defaults, cb) {
+    const out = {};
+    for (const key of Object.keys(defaults)) out[key] = key in store ? store[key] : defaults[key];
+    setTimeout(() => cb(out), 0);
+  }
+
+  window.chrome = {
+    storage: {
+      sync: {
+        get: (defaults, cb) => getFrom(sync, defaults, cb),
+        set: (values, cb) => {
+          const changes = {};
+          for (const k of Object.keys(values)) { changes[k] = { oldValue: sync[k], newValue: values[k] }; sync[k] = values[k]; }
+          changeListeners.forEach(fn => fn(changes, 'sync'));
+          if (cb) cb();
         }
-        .tablist {
-            display: flex;
-            border-bottom: 1px solid #ccc;
-            margin-bottom: 20px;
-        }
-        .tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border: none;
-            background: none;
-            color: #666;
-        }
-        .tab[aria-selected="true"] {
-            color: #000;
-            border-bottom: 2px solid #1da1f2;
-        }
-        .tab:hover {
-            background-color: #f0f0f0;
-        }
-        .content {
-            padding: 20px;
-            border: 1px solid #ccc;
-            min-height: 200px;
-        }
-    </style>
+      },
+      local: {
+        get: (defaults, cb) => getFrom(local, defaults, cb),
+        set: (values, cb) => { Object.assign(local, values); if (cb) cb(); }
+      },
+      onChanged: { addListener: fn => changeListeners.push(fn) }
+    },
+    runtime: { onMessage: { addListener: fn => messageListeners.push(fn) } }
+  };
+  window.__test = { sc, sync, local, messageListeners };
+
+  history.replaceState(null, '', (sc.startPath || '/home') + location.search);
+}
+</script>
+<script>
+// Load content.js before <body> exists, as Chrome does at document_start.
+if (new URLSearchParams(location.search).get('scenario')) {
+  document.write('<script src="/content.js"><\/script>');
+}
+</script>
+<style>
+  body { font: 14px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
+  .runner { padding: 24px; max-width: 900px; }
+  .runner h1 { font-size: 20px; margin: 0 0 4px; }
+  .runner table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+  .runner td, .runner th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e1e8ed; vertical-align: top; }
+  .pass { color: #0a7d32; font-weight: 600; }
+  .fail { color: #c62828; font-weight: 600; }
+  .wait { color: #888; }
+  .frames { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .frames iframe { width: 300px; height: 220px; border: 1px solid #ccc; }
+  /* Fake X */
+  [role="tab"] { display: inline-block; padding: 8px 12px; cursor: pointer; }
+  [role="tab"][aria-selected="true"] { font-weight: 700; border-bottom: 3px solid #1d9bf0; }
+  [role="presentation"] { display: inline-block; }
+  [data-testid="ScrollSnap-prevButtonWrapper"], [data-testid="ScrollSnap-nextButtonWrapper"] { display: inline-block; }
+  nav { display: flex; align-items: center; border-bottom: 1px solid #eee; }
+</style>
 </head>
 <body>
-    <h1>X.com Tab Test</h1>
-    <p>This simulates the Twitter/X tab structure for testing the extension.</p>
-    
-    <div role="tablist" class="tablist">
-        <button role="tab" aria-selected="false" class="tab">For you</button>
-        <button role="tab" aria-selected="true" class="tab">Following</button>
-        <button role="tab" aria-selected="false" class="tab">My TL</button>
-    </div>
-    
-    <div class="content">
-        <p>This is the content area. The extension should automatically select the 3rd tab ("My TL") when the page loads.</p>
-        <p>You can click on different tabs to test user interaction handling.</p>
-    </div>
-    
-    <script>
-        // Simple tab switching functionality for testing
-        document.querySelectorAll('[role="tab"]').forEach(tab => {
-            tab.addEventListener('click', function() {
-                // Remove selected state from all tabs
-                document.querySelectorAll('[role="tab"]').forEach(t => {
-                    t.setAttribute('aria-selected', 'false');
-                });
-                // Set selected state on clicked tab
-                this.setAttribute('aria-selected', 'true');
-            });
-        });
-    </script>
+<script>
+'use strict';
+
+if (!window.__test) {
+  // ----- Runner page ---------------------------------------------------------
+  document.body.innerHTML = `
+    <div class="runner">
+      <h1>X Default Timeline tests</h1>
+      <div id="summary" class="wait">Running… (the slowest scenarios take about 16 seconds)</div>
+      <table><thead><tr><th>Scenario</th><th>Result</th><th>Details</th></tr></thead><tbody id="rows"></tbody></table>
+      <div class="frames" id="frames"></div>
+    </div>`;
+  const rows = document.getElementById('rows');
+  const results = {};
+  window.__results = results;
+  const names = Object.keys(SCENARIOS);
+  for (const name of names) {
+    const tr = document.createElement('tr');
+    tr.id = 'row-' + name;
+    tr.innerHTML = '<td></td><td class="wait">running</td><td></td>';
+    tr.children[0].textContent = name + ' — ' + SCENARIOS[name].about;
+    rows.appendChild(tr);
+    const frame = document.createElement('iframe');
+    frame.src = '/test.html?scenario=' + encodeURIComponent(name);
+    frame.title = name;
+    document.getElementById('frames').appendChild(frame);
+  }
+  window.addEventListener('message', (event) => {
+    const { scenario, pass, details } = event.data || {};
+    if (!scenario || !(scenario in SCENARIOS)) return;
+    results[scenario] = { pass, details };
+    const tr = document.getElementById('row-' + scenario);
+    tr.children[1].textContent = pass ? 'pass' : 'FAIL';
+    tr.children[1].className = pass ? 'pass' : 'fail';
+    tr.children[2].textContent = details.join('; ');
+    const done = Object.keys(results).length;
+    const failed = Object.values(results).filter(r => !r.pass).length;
+    const summary = document.getElementById('summary');
+    summary.textContent = done < names.length
+      ? `Running… ${done}/${names.length} done`
+      : (failed ? `${failed} of ${names.length} failed` : `All ${names.length} passed`);
+    summary.className = done < names.length ? 'wait' : (failed ? 'fail' : 'pass');
+    window.__done = done === names.length;
+  });
+} else {
+  // ----- Fake X Home page ----------------------------------------------------
+  const { sc, local, messageListeners } = window.__test;
+  const BUILT_IN = ['For you', 'Following'];
+  const PINNED = ['Craft', 'News'];
+  let showing = sc.xStartsOn;
+  const clicks = [];
+  let menuOpened = false;
+  let flash = false;
+
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    for (const child of children || []) node.append(child);
+    return node;
+  }
+
+  function arrow(side) {
+    return el('div', { 'data-testid': `ScrollSnap-${side}ButtonWrapper` }, [el('button', { 'aria-label': side === 'prev' ? 'Previous' : 'Next' }, [side === 'prev' ? '‹' : '›'])]);
+  }
+
+  function renderPosts() {
+    const section = document.querySelector('[data-testid="primaryColumn"] section[role="region"]');
+    if (!section) return;
+    section.replaceChildren(...[1, 2, 3].map(i => el('div', { 'data-testid': 'cellInnerDiv', 'data-timeline': showing }, [`${showing} post ${i}`])));
+  }
+
+  function selectTimeline(name) {
+    showing = name;
+    document.querySelectorAll('nav div[role="tab"]').forEach(t => t.setAttribute('aria-selected', String(t.textContent === name)));
+    renderPosts();
+  }
+
+  function homeTab(name) {
+    const tab = el('div', { role: 'tab', 'aria-selected': String(name === showing), tabindex: '0' }, [name]);
+    tab.addEventListener('click', () => {
+      clicks.push(name);
+      // X opens a timeline menu when you click the tab that's already selected.
+      if (tab.getAttribute('aria-selected') === 'true') { menuOpened = true; return; }
+      selectTimeline(name);
+    });
+    return el('div', { role: 'presentation' }, [tab]);
+  }
+
+  function homeNav(names) {
+    return el('nav', { role: 'navigation' }, [
+      arrow('prev'),
+      el('div', { 'data-testid': 'ScrollSnap-SwipeableList' }, [
+        el('div', { role: 'tablist', 'data-testid': 'ScrollSnap-List' }, names.map(homeTab))
+      ]),
+      arrow('next')
+    ]);
+  }
+
+  function exploreNav() {
+    const links = ['Explore', 'Trending', 'News', 'Sports'].map(name => {
+      const a = el('a', { role: 'tab', href: '/explore/tabs/' + name.toLowerCase(), 'aria-selected': String(name === 'Explore') }, [name]);
+      a.addEventListener('click', (e) => { e.preventDefault(); clicks.push('explore:' + name); history.pushState(null, '', '/explore/tabs/' + name.toLowerCase() + location.search); });
+      return el('div', { role: 'presentation' }, [a]);
+    });
+    return el('nav', { role: 'navigation' }, [el('div', { role: 'tablist', 'data-testid': 'ScrollSnap-List' }, links)]);
+  }
+
+  function composer() {
+    return el('div', { 'data-testid': 'toolBar' }, [
+      el('nav', { role: 'navigation' }, [arrow('prev'), el('div', { role: 'tablist', 'data-testid': 'ScrollSnap-List' }, [el('div', { role: 'presentation' }, [el('button', {}, ['Add photo'])])]), arrow('next')])
+    ]);
+  }
+
+  function renderHome(withPinned) {
+    const column = document.querySelector('[data-testid="primaryColumn"]');
+    const names = withPinned ? BUILT_IN.concat(PINNED) : BUILT_IN;
+    column.replaceChildren(
+      sc.noTabBar ? el('div', {}, ['Home']) : homeNav(names),
+      composer(),
+      el('section', { role: 'region' }, [])
+    );
+    renderPosts();
+  }
+
+  function listRow(name, yours) {
+    const button = yours
+      ? el('button', { 'data-testid': 'list-icon-button', 'aria-label': 'Pin List' }, ['📌'])
+      : el('button', {}, ['Follow']);
+    return el('div', { 'data-testid': 'cellInnerDiv' }, [
+      el('div', { 'data-testid': 'listCell', role: 'link', tabindex: '0' }, [
+        el('div', {}, [name]), el('div', {}, ['· 3 members']), button
+      ])
+    ]);
+  }
+
+  // Your Lists page: suggestions first, then your lists, which load in two goes.
+  function renderListsPage() {
+    const column = document.querySelector('[data-testid="primaryColumn"]');
+    column.replaceChildren(el('h2', {}, ['Lists']), listRow('Design engineers', false), listRow('Inspiration', false), listRow('Craft', true), listRow('News', true));
+    setTimeout(() => column.append(listRow('sample', true)), 300);
+  }
+
+  // A list's page: the previous page's heading lingers before the list's name.
+  function renderListPage() {
+    const column = document.querySelector('[data-testid="primaryColumn"]');
+    column.replaceChildren(el('h2', {}, ['Lists']));
+    setTimeout(() => column.replaceChildren(el('h2', {}, ['sample']), el('section', { role: 'region' }, [])), 200);
+  }
+
+  function renderExplore() {
+    document.querySelector('[data-testid="primaryColumn"]').replaceChildren(exploreNav(), el('section', { role: 'region' }, [el('div', { 'data-testid': 'cellInnerDiv' }, ['Explore'])]));
+  }
+
+  // Watch for the wrong timeline being visible while a default is configured.
+  function watchForFlash() {
+    const check = () => {
+      if (!sc.expect || sc.allowFlash) return;
+      const section = document.querySelector('[data-testid="primaryColumn"] section[role="region"]');
+      const cell = section && section.querySelector('[data-testid="cellInnerDiv"][data-timeline]');
+      if (cell && location.pathname === '/home' && getComputedStyle(section).visibility !== 'hidden' && cell.dataset.timeline !== (sc.defaultTab || sc.expect) && !window.__userMoved) {
+        flash = cell.dataset.timeline;
+      }
+    };
+    new MutationObserver(check).observe(document.body, { childList: true, subtree: true, attributes: true });
+    const raf = () => { check(); requestAnimationFrame(raf); };
+    requestAnimationFrame(raf);
+  }
+
+  function visible(node) { return node && getComputedStyle(node).display !== 'none'; }
+
+  function finish() {
+    const details = [];
+    let pass = true;
+    const fail = (msg) => { pass = false; details.push(msg); };
+    const selected = Array.from(document.querySelectorAll('nav div[role="tab"][aria-selected="true"]')).map(t => t.textContent);
+
+    if (sc.expect) {
+      if (selected[0] === sc.expect) details.push('selected ' + sc.expect); else fail(`expected ${sc.expect} selected, got ${selected.join(',') || 'none'}`);
+    }
+    if (sc.expectPath && location.pathname !== sc.expectPath) fail(`ended on ${location.pathname}, expected ${sc.expectPath}`);
+    if (clicks.some(c => c.startsWith('explore:'))) fail('clicked an Explore tab');
+    if (menuOpened) fail('clicked an already-selected tab (opens X\'s menu)');
+    if (sc.expectClicks !== undefined && clicks.length !== sc.expectClicks) fail(`expected ${sc.expectClicks} clicks, got ${clicks.length}`);
+    if (flash && sc.settings.extensionEnabled !== false && !sc.noTabBar) fail(`posts from "${flash}" were visible before the default was selected`);
+    if (document.documentElement.classList.contains('xdl-pending')) fail('posts still hidden at the end');
+
+    if (scenarioName === 'hide-both') {
+      const tabs = document.querySelectorAll('nav div[role="tab"]');
+      if (visible(tabs[0].parentElement) || visible(tabs[1].parentElement)) fail('For you / Following still visible'); else details.push('built-in tabs hidden');
+      const homeArrows = document.querySelectorAll('[data-testid="primaryColumn"] > nav [data-testid$="ButtonWrapper"]');
+      if (Array.from(homeArrows).some(visible)) fail('tab bar arrows still visible'); else details.push('tab arrows hidden');
+      const composerArrows = document.querySelectorAll('[data-testid="toolBar"] [data-testid$="ButtonWrapper"]');
+      if (!Array.from(composerArrows).every(visible)) fail('composer arrows were hidden'); else details.push('composer arrows untouched');
+    }
+    if (scenarioName === 'disabled') {
+      const tabs = document.querySelectorAll('nav div[role="tab"]');
+      if (!visible(tabs[0].parentElement)) fail('For you hidden while disabled');
+      if (document.getElementById('x-tab-selector-css')) fail('style injected while disabled');
+    }
+    if (scenarioName === 'list-default') {
+      if (JSON.stringify(local.pinnedTimelines) !== JSON.stringify(PINNED)) fail('pinned lists not saved: ' + JSON.stringify(local.pinnedTimelines)); else details.push('pinned lists saved');
+      if (!local.layout || local.layout.ok !== true) fail('layout not recorded as found'); else details.push('layout recorded as found');
+      let reply;
+      messageListeners.forEach(fn => fn({ action: 'getLists' }, null, r => { reply = r; }));
+      if (!reply || !reply.found || JSON.stringify(reply.lists) !== JSON.stringify(PINNED)) fail('getLists reply wrong: ' + JSON.stringify(reply)); else details.push('popup list lookup works');
+    }
+    if (sc.expectRedirect) {
+      if (window.__redirects[0] === sc.expectRedirect) details.push('opened ' + sc.expectRedirect); else fail(`expected to open ${sc.expectRedirect}, got ${JSON.stringify(window.__redirects)}`);
+    } else if (window.__redirects.length) {
+      fail('unexpectedly opened ' + window.__redirects.join(', '));
+    }
+    if (scenarioName === 'lists-page') {
+      const names = (local.yourLists || []).slice().sort();
+      if (JSON.stringify(names) !== JSON.stringify(['Craft', 'News', 'sample'])) fail('your lists saved as ' + JSON.stringify(local.yourLists)); else details.push('saved Craft, News, sample; skipped suggestions');
+    }
+    if (scenarioName === 'list-page') {
+      if (!local.knownLists || local.knownLists['123'] !== 'sample') fail('list saved as ' + JSON.stringify(local.knownLists)); else details.push('saved list 123 as "sample"');
+    }
+    if (scenarioName === 'missing-tabs') {
+      if (!local.layout || local.layout.ok !== false) fail('missing tab bar not reported: ' + JSON.stringify(local.layout)); else details.push('reported missing tabs to the popup');
+    }
+    if (scenarioName === 'logged-out') {
+      if (local.layout) fail('warned on the signed-out page'); else details.push('no warning');
+    }
+    if (flash === false && sc.expect && !sc.allowFlash && sc.settings.extensionEnabled !== false) details.push('no flash of the wrong timeline');
+
+    parent.postMessage({ scenario: scenarioName, pass, details }, '*');
+  }
+
+  // X renders the shell first, then the tab bar, then pinned tabs.
+  if (!sc.loggedOut) document.body.append(el('div', { 'data-testid': 'primaryColumn' }, []));
+  else document.body.append(el('div', {}, ['Sign in to X']));
+  watchForFlash();
+
+  if (sc.page === 'lists') {
+    renderListsPage();
+  } else if (sc.page === 'list') {
+    renderListPage();
+  } else if (!sc.loggedOut) {
+    if (sc.startPath === '/explore') {
+      renderExplore();
+      setTimeout(() => {
+        // Home link: URL changes first, Explore's tab bar lingers briefly.
+        history.pushState(null, '', '/home' + location.search);
+        setTimeout(() => { renderHome(false); setTimeout(() => renderHome(true), 200); }, 300);
+      }, 500);
+    } else {
+      setTimeout(() => renderHome(false), 150);
+      setTimeout(() => { if (location.pathname === '/home') renderHome(true); }, 400);
+    }
+  }
+
+  if (scenarioName === 'back-navigation') {
+    // After the default has settled, X switches to Craft (as if you'd picked it),
+    // you open Explore, then press Back.
+    setTimeout(() => { window.__userMoved = true; selectTimeline('Craft'); }, 4000);
+    setTimeout(() => { history.pushState(null, '', '/explore' + location.search); renderExplore(); }, 4500);
+    setTimeout(() => history.back(), 5200);
+    window.addEventListener('popstate', () => { if (location.pathname === '/home') renderHome(true); });
+  }
+
+  setTimeout(finish, sc.duration);
+}
+</script>
 </body>
 </html>
