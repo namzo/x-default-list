@@ -12,7 +12,6 @@ A Chrome extension that chooses which X Home tab opens by default (For you, Foll
 - **Warns you if X changes its layout**: the popup says so when it couldn't find the Home tabs
 - **Remembers your pinned lists**, so you can choose one from the popup on any tab
 - Works on x.com/home (and twitter.com, which redirects there)
-- Works on both of X's web apps: the old one and the new one (`x-web`) that X is rolling out account by account
 
 ## Installation
 
@@ -28,7 +27,7 @@ After pulling changes, click the reload icon on the extension's card.
 1. Click the extension's icon to open the popup
 2. Choose your **Default timeline**. For **A list or topic**, choose which one:
    - **Pinned** lists and topics open as a Home tab. To pin one, click the **+** to the right of your Home tabs, then pin it from **Lists** or **Topics**
-   - **Not pinned** lists open on their own page whenever you open X fresh (new tab, bookmark, typing x.com). Reloading, Back and the Home link still show Home. A list appears here once you've opened it on X. On the new app, opening your Lists page once adds all your lists
+   - **Not pinned** lists open on their own page whenever you open X fresh (new tab, bookmark, typing x.com). Reloading, Back and the Home link still show Home. A list appears here once you've opened it on X
 3. Tick **Hide "For you"** or **Hide "Following"** if you like
 4. Untick **Extension on** at the top of the popup to turn the extension off without uninstalling it
 
@@ -73,6 +72,6 @@ rsvg-convert -w 16 -h 16 icons-src/icon16.svg -o icon16.png && for s in 32 48 12
 
 ## Troubleshooting
 
-- **The popup says it couldn't find the Home tabs**: X has probably changed its layout. Check which app the account gets (the page loads scripts from `abs.twimg.com/x-web/` on the new one), then open `test.html` and compare that app's fake markup with x.com.
-- **Your list isn't in the dropdown**: pin it (see Usage) and open X Home once, or, for a list you don't want pinned, open the list itself (or, on the new app, your Lists page) once.
+- **The popup says it couldn't find the Home tabs**: X has probably changed its layout. Open `test.html` and compare its fake markup with x.com.
+- **Your list isn't in the dropdown**: pin it (see Usage) and open X Home once, or, for a list you don't want pinned, open the list itself once.
 - **Console messages** start with `[X Default Timeline]`.
