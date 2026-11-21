@@ -30,7 +30,7 @@ After pulling changes, click the reload icon on the extension's card.
    - **Pinned** lists and topics open as a Home tab. To pin one, click the **+** to the right of your Home tabs, then pin it from **Lists** or **Topics**
    - **Not pinned** lists open on their own page whenever you open X fresh (new tab, bookmark, typing x.com). Reloading, Back and the Home link still show Home. A list appears here once you've opened it on X. On the new app, opening your Lists page once adds all your lists
 3. Tick **Hide "For you"** or **Hide "Following"** if you like
-4. Use the switch at the top of the popup to turn the extension off without uninstalling it
+4. Untick **Extension on** at the top of the popup to turn the extension off without uninstalling it
 
 Settings save as you change them and apply straight away. They're the same for every X account you use in Chrome: the extension doesn't tell your accounts apart. If you switch to an account that doesn't have your default list pinned, it waits a few seconds for the list and then picks that account's first pinned tab.
 
