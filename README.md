@@ -71,6 +71,13 @@ git tag v1.4 && git push origin v1.4
 
 The release workflow (`.github/workflows/release.yml`) checks that the tag matches `manifest.json`, builds `x-default-timeline-v1.4.zip` and publishes it as a GitHub release. The zip leaves out `test.html`, `icons-src/` and repo files (see `.gitattributes`).
 
+If GitHub Actions can't run, publish the same release by hand after pushing the tag:
+
+```bash
+git archive --format=zip --prefix=x-default-timeline/ -o x-default-timeline-v1.4.zip v1.4
+gh release create v1.4 x-default-timeline-v1.4.zip --verify-tag --title "X Default Timeline v1.4"
+```
+
 ## Files
 
 - `manifest.json`: extension configuration
