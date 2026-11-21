@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const layout = items.layout;
         if (!layout || layout.ok !== false) return;
         const when = new Date(layout.checkedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-        layoutWarning.textContent = 'Couldn’t find X’s Home tabs (' + when + '). X may have changed its layout, so the extension might not work until it’s updated.';
+        layoutWarning.textContent = 'Couldn’t find X’s Home tabs (' + when + '). X may have changed its layout. If so, the extension won’t work until it’s updated.';
         layoutWarning.style.display = 'block';
     });
 
