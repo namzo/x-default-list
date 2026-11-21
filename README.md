@@ -16,7 +16,7 @@ A Chrome extension that chooses which X Home tab opens by default (For you, Foll
 
 ## Installation
 
-1. Clone this repository
+1. Clone this repository: `git clone https://github.com/namzo/x-default-list.git`
 2. Open `chrome://extensions/` in Chrome
 3. Turn on **Developer mode** (top right)
 4. Click **Load unpacked** and choose this folder
@@ -28,10 +28,11 @@ After pulling changes, click the reload icon on the extension's card.
 1. Click the extension's icon to open the popup
 2. Choose your **Default timeline**. For **A list or topic**, choose which one:
    - **Pinned** lists and topics open as a Home tab. To pin one, click the **+** to the right of your Home tabs, then pin it from **Lists** or **Topics**
-   - **Not pinned** lists open on their own page whenever you open X fresh (new tab, bookmark, typing x.com). Reloading, Back and the Home link still show Home. A list appears here once you've opened it on X
+   - **Not pinned** lists open on their own page whenever you open X fresh (new tab, bookmark, typing x.com). Reloading, Back and the Home link still show Home. A list appears here once you've opened it on X. On the new app, opening your Lists page once adds all your lists
 3. Tick **Hide "For you"** or **Hide "Following"** if you like
+4. Use the switch at the top of the popup to turn the extension off without uninstalling it
 
-Settings save as you change them and apply straight away.
+Settings save as you change them and apply straight away. They're the same for every X account you use in Chrome: the extension doesn't tell your accounts apart. If you switch to an account that doesn't have your default list pinned, it waits a few seconds for the list and then picks that account's first pinned tab.
 
 ## How it works
 
@@ -48,13 +49,13 @@ X serves two different web apps, and its servers choose one per account: the old
 
 ## Testing
 
-`test.html` runs the real `content.js` against a copy of X's current Home markup, with a stand-in for the `chrome.*` APIs. The `xweb-*` scenarios use a copy of the new app's markup instead. No X account needed:
+`test.html` runs the real `content.js` against a copy of X's current Home markup, with a stand-in for the `chrome.*` APIs. The `xweb-*` scenarios use a copy of the new app's markup instead. No X account needed. From this folder, run:
 
 ```bash
 python3 -m http.server 8765
 ```
 
-Then open http://localhost:8765/test.html. The slowest scenarios take about 16 seconds. When X changes its layout, update the fake markup in `test.html` and the notes at the top of `content.js` together.
+Then open http://localhost:8765/test.html. It runs 30 scenarios (21 for the old app, 9 for `x-web`), and the slowest take about 16 seconds; the summary at the top should say "All 30 passed". When X changes its layout, update the fake markup in `test.html` and the notes at the top of `content.js` together.
 
 ## Files
 
@@ -72,6 +73,6 @@ rsvg-convert -w 16 -h 16 icons-src/icon16.svg -o icon16.png && for s in 32 48 12
 
 ## Troubleshooting
 
-- **The popup says it couldn't find the Home tabs**: X has probably changed its layout. Open `test.html` and compare its fake markup with x.com.
-- **Your list isn't in the dropdown**: make sure it's pinned (see Usage), then open X Home once.
+- **The popup says it couldn't find the Home tabs**: X has probably changed its layout. Check which app the account gets (the page loads scripts from `abs.twimg.com/x-web/` on the new one), then open `test.html` and compare that app's fake markup with x.com.
+- **Your list isn't in the dropdown**: pin it (see Usage) and open X Home once, or, for a list you don't want pinned, open the list itself (or, on the new app, your Lists page) once.
 - **Console messages** start with `[X Default Timeline]`.
