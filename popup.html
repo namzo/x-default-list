@@ -20,6 +20,8 @@
             --primary: #000000;
             --on-primary: #ffffff;
             --checkbox-border: rgba(0, 0, 0, 0.35);
+            --surface: #ffffff;
+            --menu-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.15), 0 8px 24px rgba(0, 0, 0, 0.12);
             --warning-text: #7a4f00;
             --warning-bg: #fff6e0;
             --warning-border: rgba(122, 79, 0, 0.25);
@@ -37,6 +39,8 @@
                 --primary: #ffffff;
                 --on-primary: #000000;
                 --checkbox-border: rgba(255, 255, 255, 0.4);
+                --surface: #141414;
+                --menu-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.15), 0 8px 24px rgba(0, 0, 0, 0.6);
                 --warning-text: #ffd27a;
                 --warning-bg: #241c0a;
                 --warning-border: rgba(255, 210, 122, 0.25);
@@ -227,6 +231,109 @@
         .field option {
             color: var(--text);
             background: var(--bg);
+        }
+
+        /* The open menu. Chrome 135+ lets a normal <select> be styled with
+           appearance: base-select; older versions keep the system menu. */
+        @supports (appearance: base-select) {
+            .field select,
+            .field select::picker(select) {
+                appearance: base-select;
+            }
+
+            /* .field::after already draws the chevron */
+            .field select::picker-icon {
+                display: none;
+            }
+
+            .field select::picker(select) {
+                box-sizing: border-box;
+                margin: 6px 0;
+                padding: 6px;
+                /* Never taller than the room below the field, so the menu
+                   stays inside the popup and scrolls instead */
+                max-height: calc(100% - 12px);
+                overflow-y: auto;
+                scrollbar-width: thin;
+                scrollbar-color: var(--checkbox-border) transparent;
+                border: 0;
+                border-radius: 16px;
+                background: var(--surface);
+                box-shadow: var(--menu-shadow);
+                color: var(--text);
+                font-weight: 500;
+            }
+
+            .field option {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                min-height: 40px;
+                padding: 0 12px;
+                border-radius: 10px;
+                background: transparent;
+                cursor: pointer;
+                transition: background-color 0.15s var(--ease);
+            }
+
+            .field option:hover,
+            .field option:focus-visible {
+                background: var(--fill-hover);
+                outline: none;
+            }
+
+            .field option:checked {
+                font-weight: 700;
+            }
+
+            /* "Choose a list or topic" is a prompt, not a list */
+            .field option[value=""] {
+                color: var(--secondary);
+                font-weight: 500;
+            }
+
+            /* Tick on the right of the chosen option */
+            .field option::checkmark {
+                order: 1;
+                margin-left: auto;
+                content: '✓';
+                font-weight: 700;
+            }
+
+            .field option:disabled {
+                color: var(--secondary);
+                cursor: default;
+            }
+
+            .field option:disabled:hover {
+                background: transparent;
+            }
+
+            /* Group headings ("Pinned · opens as a Home tab") */
+            /* Chrome insets the heading 6px; add 6px more so it lines up
+               with the option text (12px), and pull the options back */
+            .field optgroup {
+                padding: 8px 6px 0;
+                font-size: 13px;
+                line-height: 16px;
+                font-weight: 500;
+                color: var(--secondary);
+            }
+
+            .field optgroup:first-of-type {
+                padding-top: 4px;
+            }
+
+            .field optgroup option {
+                margin-inline: -6px;
+                font-size: 15px;
+                line-height: 20px;
+                color: var(--text);
+            }
+
+            .field optgroup option:first-of-type {
+                margin-top: 4px;
+            }
         }
 
         .option-hint {
