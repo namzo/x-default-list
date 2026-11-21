@@ -14,12 +14,14 @@ A Chrome extension that picks which Home tab X opens on (For you, Following or o
 
 ## Installation
 
-1. Clone this repository: `git clone https://github.com/namzo/x-default-list.git`
+1. Download the zip from the [latest release](https://github.com/namzo/x-default-list/releases/latest) and unzip it. You get an `x-default-timeline` folder
 2. Open `chrome://extensions/` in Chrome
 3. Turn on **Developer mode** (top right)
-4. Click **Load unpacked** and choose this folder
+4. Click **Load unpacked** and choose the `x-default-timeline` folder
 
-After pulling changes, click the reload icon on the extension's card.
+To update, download the new release, replace the folder's contents and click the reload icon on the extension's card. Chrome can't load the zip itself, so keep the unzipped folder where it is.
+
+To work on the code instead, clone the repository (`git clone https://github.com/namzo/x-default-list.git`) and load this folder.
 
 ## Usage
 
@@ -57,6 +59,17 @@ python3 -m http.server 8765
 Then open http://localhost:8765/test.html. It runs 30 scenarios (21 for the old app, 9 for `x-web`), and the slowest take about 16 seconds. A passing run says "All 30 passed" at the top.
 
 When X changes its layout, update the fake markup in `test.html` and the notes at the top of `content.js` together.
+
+## Releasing
+
+1. Raise `version` in `manifest.json` and commit it
+2. Tag the commit with the same version and push the tag:
+
+```bash
+git tag v1.4 && git push origin v1.4
+```
+
+The release workflow (`.github/workflows/release.yml`) checks that the tag matches `manifest.json`, builds `x-default-timeline-v1.4.zip` and publishes it as a GitHub release. The zip leaves out `test.html`, `icons-src/` and repo files (see `.gitattributes`).
 
 ## Files
 

@@ -1,0 +1,39 @@
+# Push a tag like v1.4 to publish a release with a zip of the extension.
+# The tag must match "version" in manifest.json.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches manifest.json
+        run: |
+          manifest="v$(jq -r .version manifest.json)"
+          if [ "$manifest" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match manifest.json ($manifest)" >&2
+            exit 1
+          fi
+
+      - name: Build the zip
+        run: |
+          zip="x-default-timeline-$GITHUB_REF_NAME.zip"
+          git archive --format=zip --prefix=x-default-timeline/ -o "$zip" HEAD
+          unzip -l "$zip"
+          echo "ZIP=$zip" >> "$GITHUB_ENV"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$ZIP" \
+            --title "X Default Timeline $GITHUB_REF_NAME" \
+            --notes "Download **$ZIP**, unzip it, then load the \`x-default-timeline\` folder on \`chrome://extensions\` with **Load unpacked** (Developer mode on). See the README for details."

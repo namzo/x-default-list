@@ -1,0 +1,6 @@
+# Left out of release zips (git archive): only what Chrome needs ships
+test.html export-ignore
+icons-src export-ignore
+.github export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore
