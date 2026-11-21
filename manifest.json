@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "X Default Timeline",
   "version": "1.3",
-  "description": "Choose which X Home tab opens by default (For you, Following or a pinned list) and hide the tabs you don't use.",
+  "description": "Set lists as your default timeline on X, and hide the Home tabs you don't use.",
   "permissions": [
     "activeTab",
     "storage"

@@ -1,6 +1,6 @@
 # X Default Timeline
 
-A Chrome extension that picks which Home tab X opens on (For you, Following or one of your lists) and hides the tabs you don't use.
+Chrome extension for setting lists as your default timeline on X. It can also open X on For you or Following, and hide the Home tabs you don't use.
 
 ## Features
 
