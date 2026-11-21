@@ -40,6 +40,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         syncSelectWithHideState();
         updateUIState(items.extensionEnabled);
+        // Turn transitions on only after the saved state is drawn, so the
+        // checkboxes don't fade in every time the popup opens.
+        requestAnimationFrame(function() {
+            document.documentElement.classList.add('ready');
+        });
     });
 
     // Disable conflicting options in the select and auto-switch if needed
@@ -75,7 +80,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const layout = items.layout;
         if (!layout || layout.ok !== false) return;
         const when = new Date(layout.checkedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-        layoutWarning.textContent = 'Couldn\'t find the Home tabs on X (' + when + '). X may have changed its layout, so the extension might not work until it\'s updated.';
+        layoutWarning.textContent = 'Couldn’t find X’s Home tabs (' + when + '). X may have changed its layout, so the extension might not work until it’s updated.';
         layoutWarning.style.display = 'block';
     });
 
@@ -100,12 +105,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // Home tab), "list:<id>" for a list that isn't pinned (opens its page).
     function populateLists(pinned, unpinned, current) {
         if (pinned.length === 0 && unpinned.length === 0) {
-            showListMessage('No lists found yet');
+            showListMessage('No lists yet');
             return;
         }
         selectedList.disabled = false;
         selectedList.innerHTML = '';
-        addOption(selectedList, '', 'Select a list or topic', false);
+        addOption(selectedList, '', 'Choose a list or topic', false);
 
         if (pinned.length) {
             const group = document.createElement('optgroup');
@@ -117,7 +122,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (unpinned.length) {
             const group = document.createElement('optgroup');
-            group.label = 'Not pinned · opens the list';
+            group.label = 'Not pinned · opens the list’s page';
             unpinned.forEach(function(list) {
                 addOption(group, 'list:' + list.id, list.name, list.id === current.selectedListId);
             });

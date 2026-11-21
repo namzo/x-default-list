@@ -43,6 +43,12 @@
             }
         }
 
+        /* popup.js adds .ready once the saved settings are shown */
+        html:not(.ready) *,
+        html:not(.ready) *::after {
+            transition: none !important;
+        }
+
         body {
             width: 300px;
             margin: 0;
@@ -125,12 +131,14 @@
         .disabled-message .title {
             color: var(--text);
             font-weight: 700;
+            text-wrap: balance;
         }
 
         .disabled-message .subtitle {
             margin-top: 4px;
             font-size: 13px;
             line-height: 16px;
+            text-wrap: balance;
         }
 
         .content-enabled {
@@ -226,6 +234,7 @@
             font-size: 13px;
             line-height: 16px;
             color: var(--secondary);
+            text-wrap: pretty;
         }
 
         .option-hint strong {
@@ -252,6 +261,7 @@
             background: var(--warning-bg);
             border: 1px solid var(--warning-border);
             border-radius: 12px;
+            text-wrap: pretty;
         }
     </style>
 </head>
@@ -279,27 +289,27 @@
                 <option value="list">A list or topic</option>
             </select>
         </label>
-        <p class="option-hint">Shown when you open X. Reloading and the Home link keep the tab you're on.</p>
+        <p class="option-hint">Shown when you open X. Reloading and the Home link keep the tab you’re on.</p>
         <div id="listSelectorWrapper">
             <label class="field">
                 <span class="field-label">List or topic</span>
                 <select id="selectedList">
-                    <option value="">Select a list or topic</option>
+                    <option value="">Choose a list or topic</option>
                 </select>
             </label>
         </div>
-        <p id="listHint" class="option-hint" style="display: none;">Pinned lists and topics open as a Home tab. A list you haven't pinned opens on its own page when you open X; to add one here, open it once on X (on X's new design, opening your Lists page once adds them all). To pin, click the <strong>+</strong> next to your Home tabs.</p>
+        <p id="listHint" class="option-hint" style="display: none;">Pinned lists and topics open as a Home tab. To pin one, click the <strong>+</strong> next to your Home tabs. Lists you haven’t pinned open on their own page; open one on X to add it here. On X’s new design, opening your Lists page adds them all.</p>
 
         <!-- Divider -->
         <div class="divider"></div>
 
         <div class="option">
-            <label for="hideForYou">Hide "For you"</label>
+            <label for="hideForYou">Hide “For you”</label>
             <input type="checkbox" id="hideForYou">
         </div>
 
         <div class="option">
-            <label for="hideFollowing">Hide "Following"</label>
+            <label for="hideFollowing">Hide “Following”</label>
             <input type="checkbox" id="hideFollowing">
         </div>
     </div>
