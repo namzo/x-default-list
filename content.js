@@ -5,7 +5,12 @@
 // history.pushState, etc.). Everything here works through DOM selectors, CSS,
 // clicks and DOM/Navigation events, which are shared between worlds.
 //
-// Current X home layout (checked 2026-11-19):
+// X serves two web apps, chosen per account on its servers, so the extension
+// supports both. The old one ("responsive-web", scripts from
+// abs.twimg.com/responsive-web/) is described first; the new one ("x-web",
+// scripts from abs.twimg.com/x-web/) is described after it.
+//
+// Old app, Home layout (checked 2026-11-19):
 //   [data-testid="primaryColumn"]
 //     nav
 //       [data-testid="ScrollSnap-prevButtonWrapper"]
@@ -27,6 +32,26 @@
 // use <a role="tab" href>, and the post composer toolbar is a role="tablist"
 // with no tabs at all. While X swaps pages, the old page's tab bar can still
 // be in the DOM, so we only ever act on a tab bar of <div> tabs.
+//
+// New app (x-web), Home layout (checked 2026-11-21). There is no
+// primaryColumn and hardly any data-testid:
+//   main
+//     header[data-page-header]
+//       [role="tablist"]
+//         button[role="tab"][data-pinned-timeline="for-you"]    "For you"
+//         button[role="tab"][data-pinned-timeline="following"]  "Following"
+//         button[role="tab"]                                    pinned lists…
+//       button "Manage timelines" (the +, outside the tablist)
+//     section  the posts, in a [id^="urt:"] container
+// Each tab's name appears twice: once in an [aria-hidden="true"] copy (for
+// sizing) and once for real, so tabLabel() skips aria-hidden text. Other
+// pages' tab bars are buttons too, so Home's is the one with
+// data-pinned-timeline. Lists pages on x-web (checked 2026-11-21):
+//   /<username>/lists  rows are [role="link"][data-href="/i/lists/<id>"], so
+//                      each row gives its list's ID. Suggestions come first and
+//                      end with an a[href="/i/lists/suggested"] ("Show more");
+//                      rows after that link are your lists.
+//   /i/lists/<id>      the list's name is the first main h2.
 //
 // test.html loads this file with a stand-in for the chrome.* APIs and a copy
 // of the markup above; open it to check changes without an X account.
@@ -119,7 +144,14 @@ function shouldOpenUnpinnedList() {
   return openedFresh && settings.extensionEnabled && isUnpinnedListDefault() && isHomePage();
 }
 
+// Selectors for the new app (x-web); see the notes at the top.
+const XWEB_TABLIST = 'main [role="tablist"]:has(> [role="tab"][data-pinned-timeline])';
+const XWEB_POSTS = 'main section:has([id^="urt:"])';
+const XWEB_SHELL = 'main header[data-page-header]';
+
 function getTimelineTablist() {
+  const xweb = document.querySelector(XWEB_TABLIST);
+  if (xweb) return xweb;
   const scope = document.querySelector('[data-testid="primaryColumn"]') || document;
   for (const list of scope.querySelectorAll('[role="tablist"]')) {
     if (list.querySelector('div[role="tab"]') && !list.querySelector('a[role="tab"]')) return list;
@@ -131,8 +163,16 @@ function getTabs(tablist) {
   return tablist ? Array.from(tablist.querySelectorAll('[role="tab"]')) : [];
 }
 
+// The tab's visible name. x-web also puts an aria-hidden copy of the name in
+// each tab, which textContent would include twice.
 function tabLabel(tab) {
-  return tab.textContent.trim();
+  let text = '';
+  const walker = document.createTreeWalker(tab, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const hidden = node.parentElement && node.parentElement.closest('[aria-hidden="true"]');
+    if (!hidden || !tab.contains(hidden)) text += node.nodeValue;
+  }
+  return text.trim() || tab.textContent.trim();
 }
 
 function isSelected(tab) {
@@ -167,11 +207,19 @@ function buildCss() {
   const nav = '[data-testid="primaryColumn"] nav:has(div[role="tab"])';
   const rules = [
     `html.${PENDING_CLASS} ${nav},
-     html.${PENDING_CLASS} [data-testid="primaryColumn"] section[role="region"] { visibility: hidden !important; }`
+     html.${PENDING_CLASS} [data-testid="primaryColumn"] section[role="region"],
+     html.${PENDING_CLASS} ${XWEB_TABLIST},
+     html.${PENDING_CLASS} ${XWEB_POSTS} { visibility: hidden !important; }`
   ];
   const hidden = [];
-  if (settings.hideForYou) hidden.push(`${tablist} > [role="presentation"]:nth-child(1)`);
-  if (settings.hideFollowing) hidden.push(`${tablist} > [role="presentation"]:nth-child(2)`);
+  if (settings.hideForYou) {
+    hidden.push(`${tablist} > [role="presentation"]:nth-child(1)`,
+      `${XWEB_TABLIST} > [role="tab"][data-pinned-timeline="for-you"]`);
+  }
+  if (settings.hideFollowing) {
+    hidden.push(`${tablist} > [role="presentation"]:nth-child(2)`,
+      `${XWEB_TABLIST} > [role="tab"][data-pinned-timeline="following"]`);
+  }
   if (hidden.length) {
     // The scroll arrows misbehave once tabs are hidden, so hide them too.
     hidden.push(
@@ -314,7 +362,8 @@ function endSession() {
 function onSessionTimeout() {
   // The tab bar never appeared. Only blame X's layout if the signed-in app
   // (which has a primary column) actually loaded.
-  if (session && !session.appliedAt && document.querySelector('[data-testid="primaryColumn"]')) {
+  if (session && !session.appliedAt &&
+      document.querySelector(`[data-testid="primaryColumn"], ${XWEB_SHELL}`)) {
     saveLayoutStatus(false);
     console.warn('[X Default Timeline] Could not find the Home tabs. X may have changed its layout.');
   }
@@ -409,21 +458,51 @@ function watchListPages() {
 }
 
 function recordListPage(id) {
-  const heading = document.querySelector('[data-testid="primaryColumn"] h2');
+  const heading = document.querySelector('[data-testid="primaryColumn"] h2') ||
+    (!document.querySelector('[data-testid="primaryColumn"]') && document.querySelector('main h2'));
   const name = heading && heading.textContent.trim();
   if (!name) return;
+  rememberLists({ [id]: name });
+}
+
+// Adds lists (ID → name) to knownLists, most recent last.
+function rememberLists(found) {
   chrome.storage.local.get({ knownLists: {} }, (items) => {
     const known = items.knownLists || {};
-    if (known[id] === name) return;
-    delete known[id]; // re-insert so the most recent is last
-    known[id] = name;
+    let changed = false;
+    for (const [id, name] of Object.entries(found)) {
+      if (known[id] === name) continue;
+      delete known[id]; // re-insert so the most recent is last
+      known[id] = name;
+      changed = true;
+    }
+    if (!changed) return;
     const ids = Object.keys(known);
     while (ids.length > MAX_KNOWN_LISTS) delete known[ids.shift()];
     chrome.storage.local.set({ knownLists: known });
   });
 }
 
+// x-web's Lists page: rows link to /i/lists/<id>, and your lists come after
+// the suggestions' "Show more" link (see the notes at the top).
+function recordYourListsXweb(collected) {
+  const suggested = document.querySelector('main a[href="/i/lists/suggested"]');
+  const before = collected.size;
+  const found = {};
+  for (const row of document.querySelectorAll('main [role="link"][data-href^="/i/lists/"]')) {
+    if (suggested && !(suggested.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+    const id = (row.getAttribute('data-href').match(/^\/i\/lists\/(\d+)$/) || [])[1];
+    const name = row.innerText.split('\n')[0].trim();
+    if (!id || !name) continue;
+    found[id] = name;
+    collected.add(name);
+  }
+  if (Object.keys(found).length) rememberLists(found);
+  if (collected.size !== before) chrome.storage.local.set({ yourLists: Array.from(collected) });
+}
+
 function recordYourLists(collected) {
+  if (!document.querySelector('[data-testid="primaryColumn"]')) return recordYourListsXweb(collected);
   const before = collected.size;
   for (const cell of document.querySelectorAll('[data-testid="primaryColumn"] [data-testid="listCell"]')) {
     if (!cell.querySelector('[data-testid="list-icon-button"]')) continue; // a suggestion
