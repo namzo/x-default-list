@@ -65,7 +65,8 @@
             -webkit-font-smoothing: antialiased;
         }
 
-        /* Top row: the on/off switch for the whole extension */
+        /* Top row: the on/off switch for the whole extension. Each row is a
+           <label>, so clicking anywhere on it ticks the box. */
         .enabled-row {
             display: flex;
             align-items: center;
@@ -74,13 +75,13 @@
             margin-bottom: 16px;
             padding: 14px 0;
             border-bottom: 1px solid var(--border);
+            cursor: pointer;
         }
 
-        .enabled-row label {
+        .enabled-row .row-label {
             flex: 1;
             font-size: 17px;
             font-weight: 700;
-            cursor: pointer;
         }
 
         /* Checkboxes: black when ticked (white in dark mode), like X's
@@ -97,11 +98,17 @@
             border-radius: 5px;
             background: transparent;
             cursor: pointer;
-            transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease);
+            transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease), scale 0.15s var(--ease);
         }
 
-        input[type="checkbox"]:hover {
+        /* Hovering anywhere on the row highlights the box */
+        input[type="checkbox"]:hover,
+        label:hover > input[type="checkbox"] {
             border-color: var(--primary);
+        }
+
+        label:active > input[type="checkbox"] {
+            scale: 0.96;
         }
 
         input[type="checkbox"]:checked {
@@ -155,12 +162,12 @@
             justify-content: space-between;
             gap: 12px;
             min-height: 40px;
+            cursor: pointer;
         }
 
-        .option label {
+        .option .row-label {
             flex: 1;
             font-weight: 500;
-            cursor: pointer;
         }
 
         /* Dropdowns: a filled field with a small label above the value */
@@ -178,9 +185,25 @@
             background: var(--fill-hover);
         }
 
-        .field:focus-within {
+        /* Outline while the menu is open or for keyboard focus, not left
+           behind after choosing with the mouse */
+        .field:has(select:focus-visible),
+        .field:has(select:open) {
             border-color: var(--primary);
             background: transparent;
+        }
+
+        /* "No lists yet": grey, and no hover, so it doesn't look clickable */
+        .field:has(select:disabled) {
+            cursor: default;
+        }
+
+        .field:has(select:disabled):hover {
+            background: var(--fill);
+        }
+
+        .field:has(select:disabled)::after {
+            border-color: var(--secondary);
         }
 
         .field-label {
@@ -374,10 +397,10 @@
 </head>
 <body>
     <!-- Extension Enabled -->
-    <div class="enabled-row">
-        <label for="extensionEnabled">Extension on</label>
+    <label class="enabled-row">
+        <span class="row-label">Extension on</span>
         <input type="checkbox" id="extensionEnabled" aria-describedby="disabledState">
-    </div>
+    </label>
 
     <!-- Disabled State -->
     <div id="disabledState" class="disabled-message">
@@ -410,15 +433,15 @@
         <!-- Divider -->
         <div class="divider"></div>
 
-        <div class="option">
-            <label for="hideForYou">Hide “For you”</label>
+        <label class="option">
+            <span class="row-label">Hide “For you”</span>
             <input type="checkbox" id="hideForYou">
-        </div>
+        </label>
 
-        <div class="option">
-            <label for="hideFollowing">Hide “Following”</label>
+        <label class="option">
+            <span class="row-label">Hide “Following”</span>
             <input type="checkbox" id="hideFollowing">
-        </div>
+        </label>
     </div>
 
     <script src="popup.js"></script>
