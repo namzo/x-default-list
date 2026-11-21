@@ -1,17 +1,16 @@
 # X Default Timeline
 
-A Chrome extension that chooses which X Home tab opens by default (For you, Following or a pinned list or topic) and can hide the tabs you don't use.
+A Chrome extension that picks which Home tab X opens on (For you, Following or one of your lists) and hides the tabs you don't use.
 
 ## Features
 
-- **Default timeline**: For you, Following, or any list or topic you've pinned to your Home tabs
-- **Lists you haven't pinned**: choose one and opening X takes you straight to that list's page (the Home link still shows Home)
-- **Hide "For you"** and/or **Hide "Following"**
-- **No flash of the wrong timeline**: the tab bar and posts stay hidden for a moment (at most 2.5 seconds) until your default tab is selected, so you never see X's last-used tab first
-- **Keeps your place**: the default applies when you open X fresh (new tab, bookmark, typing x.com). After that, reloading, Back/Forward and the Home link keep whichever tab you're on, so the page doesn't jump
-- **Warns you if X changes its layout**: the popup says so when it couldn't find the Home tabs
-- **Remembers your pinned lists**, so you can choose one from the popup on any tab
-- Works on x.com/home (and twitter.com, which redirects there)
+- **Default timeline**: open X on For you, Following, or any list or topic pinned to your Home tabs
+- **Lists you haven't pinned**: opening X takes you straight to that list's page, and the Home link still goes to Home
+- **Hide tabs**: hide For you, Following or both
+- **Opens on the right tab**: the tab bar and posts stay hidden until your default is selected (2.5 seconds at most), so X's last-used tab never flashes up first
+- **Keeps your place**: the default applies only when you open X fresh (a new tab, a bookmark, typing x.com). Reloading, Back/Forward and the Home link keep the tab you're on, so the page doesn't jump
+- **Layout warning**: the popup tells you when the extension couldn't find X's Home tabs
+- Works on x.com and twitter.com, which redirects to it
 
 ## Installation
 
@@ -25,36 +24,39 @@ After pulling changes, click the reload icon on the extension's card.
 ## Usage
 
 1. Click the extension's icon to open the popup
-2. Choose your **Default timeline**. For **A list or topic**, choose which one:
+2. Choose your **Default timeline**. For **A list or topic**, pick one from the second dropdown:
    - **Pinned** lists and topics open as a Home tab. To pin one, click the **+** to the right of your Home tabs, then pin it from **Lists** or **Topics**
-   - **Not pinned** lists open on their own page whenever you open X fresh (new tab, bookmark, typing x.com). Reloading, Back and the Home link still show Home. A list appears here once you've opened it on X
-3. Tick **Hide "For you"** or **Hide "Following"** if you like
-4. Untick **Extension on** at the top of the popup to turn the extension off without uninstalling it
+   - **Not pinned** lists open on their own page when you open X fresh. A list shows up in the dropdown once you've opened it on X
+3. Tick **Hide "For you"** or **Hide "Following"** to remove those tabs
+4. Untick **Extension on** to switch the extension off without uninstalling it
 
-Settings save as you change them and apply straight away. They're the same for every X account you use in Chrome: the extension doesn't tell your accounts apart. If you switch to an account that doesn't have your default list pinned, it waits a few seconds for the list and then picks that account's first pinned tab.
+Settings save as you change them and apply straight away. Every X account you use in Chrome shares them, because the extension can't tell your accounts apart. If you switch to an account that hasn't pinned your default list, the extension waits a few seconds for it, then picks that account's first pinned tab.
 
 ## How it works
 
-`content.js` runs on x.com from page start, in Chrome's isolated world, so it works only through the DOM.
+`content.js` runs on x.com from page start, in Chrome's isolated world, so it can only read and change the page's DOM.
 
-X serves two different web apps, and its servers choose one per account: the old one (scripts from `abs.twimg.com/responsive-web/`) and the new one, `x-web` (scripts from `abs.twimg.com/x-web/`). Their markup differs, so `content.js` knows both; the notes at the top of the file describe each.
+X serves two web apps, and its servers choose one per account: the old one (scripts from `abs.twimg.com/responsive-web/`) and the new one, `x-web` (scripts from `abs.twimg.com/x-web/`). Their markup differs, so `content.js` handles both. The notes at the top of the file describe each layout.
 
-1. **Finds the Home tab bar**: on the old app, the `role="tablist"` in the main column whose tabs are `<div role="tab">` (Explore and profile tab bars use links, and the post composer toolbar has no tabs). On `x-web`, the `role="tablist"` whose tabs include For you and Following, marked `data-pinned-timeline`
-2. **Hides tabs** with injected CSS keyed to the current markup
-3. **Selects the default tab** on the first visit to Home after you open X fresh, or straight after you change the setting. It waits for the tab bar and your pinned lists, clicks the default, then guards it for 3 seconds in case X switches back (stopping as soon as you pick a tab). Back/Forward and the Home link keep the tab you're on (X keeps it within the page). After a reload X only remembers For you or Following, never a list, so the extension keeps the tab you were on in `sessionStorage` (per browser tab) and puts it back. It also moves you off a tab you've hidden
-4. **Follows navigation** with the Navigation API, since X is a single-page app
-5. **Learns your lists**: your Lists page (`/<username>/lists`) gives the names of your own lists, and each list's page (`/i/lists/<id>`) gives its ID. On `x-web` the Lists page gives the IDs too, so opening it once is enough. If your default is a list that isn't pinned, opening X fresh replaces Home with that list's page
-6. **Reports to the popup** through `chrome.storage.local`: whether it found the Home tabs, your pinned tabs, and the lists it has learned
+1. **Finds the Home tab bar**. On the old app, it's the `role="tablist"` in the main column whose tabs are `<div role="tab">`; Explore and profile tab bars use links, and the post composer's toolbar has no tabs. On `x-web`, it's the `role="tablist"` whose For you and Following tabs carry `data-pinned-timeline`
+2. **Hides tabs** with injected CSS
+3. **Selects the default tab** on the first visit to Home after you open X fresh, or as soon as you change the setting. It waits for the tab bar and your pinned lists, clicks the default, then keeps it selected for 3 seconds in case X switches back. It stops as soon as you pick a tab yourself, and moves you off any tab you've hidden
+4. **Puts your tab back after a reload**. X only remembers For you or Following, never a list, so the extension saves the tab you're on in `sessionStorage` (per browser tab) and selects it again
+5. **Follows navigation** with the Navigation API, since X is a single-page app
+6. **Learns your lists**. Your Lists page (`/<username>/lists`) gives your lists' names, and each list's page (`/i/lists/<id>`) gives its ID; on `x-web` the Lists page gives the IDs too. If your default is a list that isn't pinned, opening X fresh goes to that list's page instead of Home
+7. **Reports to the popup** through `chrome.storage.local`: whether it found the Home tabs, your pinned tabs, and the lists it has learned
 
 ## Testing
 
-`test.html` runs the real `content.js` against a copy of X's current Home markup, with a stand-in for the `chrome.*` APIs. The `xweb-*` scenarios use a copy of the new app's markup instead. No X account needed. From this folder, run:
+`test.html` loads the real `content.js` into copies of X's Home markup, with a stand-in for the `chrome.*` APIs, so you don't need an X account. The `xweb-*` scenarios use the new app's markup. From this folder, run:
 
 ```bash
 python3 -m http.server 8765
 ```
 
-Then open http://localhost:8765/test.html. It runs 30 scenarios (21 for the old app, 9 for `x-web`), and the slowest take about 16 seconds; the summary at the top should say "All 30 passed". When X changes its layout, update the fake markup in `test.html` and the notes at the top of `content.js` together.
+Then open http://localhost:8765/test.html. It runs 30 scenarios (21 for the old app, 9 for `x-web`), and the slowest take about 16 seconds. A passing run says "All 30 passed" at the top.
+
+When X changes its layout, update the fake markup in `test.html` and the notes at the top of `content.js` together.
 
 ## Files
 
@@ -73,5 +75,5 @@ rsvg-convert -w 16 -h 16 icons-src/icon16.svg -o icon16.png && for s in 32 48 12
 ## Troubleshooting
 
 - **The popup says it couldn't find the Home tabs**: X has probably changed its layout. Open `test.html` and compare its fake markup with x.com.
-- **Your list isn't in the dropdown**: pin it (see Usage) and open X Home once, or, for a list you don't want pinned, open the list itself once.
-- **Console messages** start with `[X Default Timeline]`.
+- **Your list isn't in the dropdown**: pin it and open X Home once. For a list you don't want to pin, open the list on X once.
+- **Checking what the extension did**: its console messages start with `[X Default Timeline]`.
