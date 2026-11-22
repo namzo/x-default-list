@@ -520,7 +520,11 @@ let lastPath = window.location.pathname;
 function onNavigated(navigationType) {
   const path = window.location.pathname;
   if (path === lastPath) return;
+  const wasHome = lastPath === '/' || lastPath === '/home';
   lastPath = path;
+  // Opening x.com loads on / and X then rewrites the address to /home. That's
+  // the same visit to Home, so keep the session that's choosing your default.
+  if (wasHome && isHomePage()) return;
 
   watchListPages();
   applyCss();

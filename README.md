@@ -56,7 +56,7 @@ X serves two web apps, and its servers choose one per account: the old one (scri
 python3 -m http.server 8765
 ```
 
-Then open http://localhost:8765/test.html. It runs 30 scenarios (21 for the old app, 9 for `x-web`), and the slowest take about 16 seconds. A passing run says "All 30 passed" at the top.
+Then open http://localhost:8765/test.html. It runs 32 scenarios (22 for the old app, 10 for `x-web`), and the slowest take about 16 seconds. A passing run says "All 32 passed" at the top.
 
 When X changes its layout, update the fake markup in `test.html` and the notes at the top of `content.js` together.
 

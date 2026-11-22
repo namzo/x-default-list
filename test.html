@@ -64,6 +64,11 @@ const SCENARIOS = {
     // News is the default on arrival; Craft is where you are when you come back.
     xStartsOn: 'For you', defaultTab: 'News', expect: 'Craft', duration: 7000
   },
+  'open-root': {
+    about: 'Opening x.com (not /home) selects the default after X moves the address to /home',
+    settings: { makeListDefault: true, selectedList: 'News' },
+    xStartsOn: 'Following', startPath: '/', expect: 'News', expectPath: '/home', duration: 2500
+  },
   'disabled': {
     about: 'Does nothing when the extension is switched off',
     settings: { extensionEnabled: false, hideForYou: true, makeFollowingDefault: true },
@@ -160,6 +165,11 @@ const SCENARIOS = {
     about: 'New app: Home link from Explore selects the default without touching Explore\'s tabs',
     xweb: true, settings: { makeListDefault: true, selectedList: 'News' },
     xStartsOn: 'Craft', startPath: '/explore', expect: 'News', expectPath: '/home', duration: 3500
+  },
+  'xweb-open-root': {
+    about: 'New app: opening x.com (not /home) selects the default after X moves the address to /home',
+    xweb: true, settings: { makeListDefault: true, selectedList: 'News' },
+    xStartsOn: 'Following', startPath: '/', expect: 'News', expectPath: '/home', duration: 2500
   },
   'xweb-reload-keeps-list': {
     about: 'New app: reloading while on a list puts the list back',
@@ -600,6 +610,8 @@ if (!window.__test) {
         setTimeout(() => { renderHome(false); setTimeout(() => renderHome(true), 200); }, 300);
       }, 500);
     } else {
+      // Opening x.com: X loads on / and then replaces the address with /home.
+      if (sc.startPath === '/') setTimeout(() => history.replaceState(null, '', '/home' + location.search), 100);
       setTimeout(() => renderHome(false), 150);
       setTimeout(() => { if (location.pathname === '/home') renderHome(true); }, 400);
     }
